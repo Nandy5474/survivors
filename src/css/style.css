@@ -1,0 +1,463 @@
+/* ============================================================
+   「幸存者」主样式文件
+   版本: v0.1.0 | 日期: 2026-05-26
+   ============================================================ */
+
+/* -------------------- CSS 变量 / 设计 Tokens -------------------- */
+:root {
+  --color-bg: #1a1a2e;
+  --color-bg-dark: #0f0f1a;
+  --color-panel: rgba(20, 20, 40, 0.85);
+  --color-panel-border: rgba(100, 100, 160, 0.4);
+  --color-text: #e0e0e0;
+  --color-text-dim: #8888aa;
+  --color-accent: #e63946;
+  --color-accent-hover: #ff6b6b;
+  --color-gold: #ffd700;
+  --color-green: #2ecc71;
+  --color-blue: #3498db;
+  --color-danger: #e74c3c;
+  --color-warning: #f39c12;
+
+  --font-main: 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif;
+  --font-display: 'PingFang SC', 'Microsoft YaHei', serif;
+  --font-size-xs: 12px;
+  --font-size-sm: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 20px;
+  --font-size-xl: 28px;
+  --font-size-2xl: 40px;
+
+  --z-canvas: 1;
+  --z-ui: 10;
+  --z-dialog: 20;
+  --z-menu: 30;
+  --z-loading: 50;
+  --z-notification: 60;
+}
+
+/* -------------------- 全局重置 -------------------- */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-bg-dark);
+  font-family: var(--font-main);
+  color: var(--color-text);
+  font-size: var(--font-size-md);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+/* -------------------- Canvas 容器 -------------------- */
+#game-canvas-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: var(--z-canvas);
+}
+
+#game-canvas-container canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Canvas z-index 自底向上堆叠 */
+#canvas-fog    { z-index: 1; }
+#canvas-map    { z-index: 2; }
+#canvas-entity  { z-index: 3; }
+#canvas-fx     { z-index: 4; }
+
+/* -------------------- UI 层 -------------------- */
+#ui-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: var(--z-ui);
+  pointer-events: none;
+}
+
+#ui-layer > * {
+  pointer-events: auto;
+}
+
+/* -------------------- 顶部 HUD -------------------- */
+#hud-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 8px 16px;
+  gap: 16px;
+}
+
+.hud-panel {
+  background: var(--color-panel);
+  border: 1px solid var(--color-panel-border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.hud-item {
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  color: var(--color-text);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+}
+
+#hud-stats .hud-item {
+  font-weight: 600;
+}
+
+/* -------------------- 底部操作栏 -------------------- */
+#hud-bottom {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  background: var(--color-panel);
+  border: 1px solid var(--color-panel-border);
+  border-radius: 12px;
+  padding: 8px 16px;
+}
+
+.hud-btn {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: var(--color-text);
+  font-family: var(--font-main);
+  font-size: var(--font-size-sm);
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.hud-btn:hover {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+.hud-btn:active {
+  transform: scale(0.96);
+}
+
+/* -------------------- 对话框 -------------------- */
+#dialog-container {
+  position: fixed;
+  bottom: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(600px, 90vw);
+  z-index: var(--z-dialog);
+}
+
+#dialog-box {
+  background: var(--color-panel);
+  border: 2px solid var(--color-panel-border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  backdrop-filter: blur(10px);
+}
+
+#dialog-speaker {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  color: var(--color-accent);
+  margin-bottom: 8px;
+}
+
+#dialog-text {
+  font-size: var(--font-size-md);
+  line-height: 1.7;
+  margin-bottom: 16px;
+}
+
+#dialog-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#dialog-choices button {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: var(--color-text);
+  font-family: var(--font-main);
+  font-size: var(--font-size-sm);
+  padding: 10px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+}
+
+#dialog-choices button:hover {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+/* -------------------- 通知 -------------------- */
+#notification-container {
+  position: fixed;
+  top: 80px;
+  right: 16px;
+  z-index: var(--z-notification);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notification {
+  background: var(--color-panel);
+  border: 1px solid var(--color-panel-border);
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: var(--font-size-sm);
+  animation: slideInRight 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
+}
+
+.notification.warning { border-left: 3px solid var(--color-warning); }
+.notification.danger  { border-left: 3px solid var(--color-danger); }
+.notification.success { border-left: 3px solid var(--color-green); }
+.notification.info    { border-left: 3px solid var(--color-blue); }
+
+/* -------------------- 加载画面 -------------------- */
+#loading-screen {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: var(--color-bg-dark);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-loading);
+}
+
+#loading-bar-container {
+  width: 300px;
+  height: 8px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+#loading-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--color-accent);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+#loading-text {
+  color: var(--color-text-dim);
+  font-size: var(--font-size-sm);
+}
+
+/* -------------------- 菜单画面 -------------------- */
+#menu-screen {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background:
+    radial-gradient(ellipse at center, rgba(20, 20, 40, 0.9) 0%, rgba(10, 10, 20, 0.95) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-menu);
+}
+
+#menu-content {
+  text-align: center;
+}
+
+#menu-title {
+  font-family: var(--font-display);
+  font-size: var(--font-size-2xl);
+  color: var(--color-accent);
+  letter-spacing: 8px;
+  text-shadow: 0 0 20px rgba(230, 57, 70, 0.5);
+  margin-bottom: 4px;
+}
+
+#menu-subtitle {
+  font-size: var(--font-size-md);
+  color: var(--color-text-dim);
+  letter-spacing: 4px;
+  margin-bottom: 48px;
+}
+
+#menu-options {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+}
+
+.menu-btn {
+  width: 220px;
+  padding: 14px 0;
+  font-family: var(--font-main);
+  font-size: var(--font-size-md);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: var(--color-text);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  letter-spacing: 2px;
+}
+
+.menu-btn:hover {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+  box-shadow: 0 0 20px rgba(230, 57, 70, 0.3);
+}
+
+.menu-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.menu-btn:disabled:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.2);
+  color: var(--color-text);
+  box-shadow: none;
+}
+
+/* -------------------- 暂停遮罩 -------------------- */
+#pause-overlay {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-menu);
+  backdrop-filter: blur(4px);
+}
+
+#pause-menu {
+  text-align: center;
+}
+
+#pause-menu h2 {
+  font-size: var(--font-size-xl);
+  margin-bottom: 32px;
+  letter-spacing: 4px;
+}
+
+#pause-menu .menu-btn {
+  display: block;
+  margin: 0 auto 12px;
+}
+
+/* -------------------- 通用工具类 -------------------- */
+.hidden {
+  display: none !important;
+}
+
+/* -------------------- 动画 -------------------- */
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* -------------------- 响应式设计 -------------------- */
+@media (max-width: 768px) {
+  :root {
+    --font-size-xs: 11px;
+    --font-size-sm: 12px;
+    --font-size-md: 14px;
+    --font-size-lg: 17px;
+    --font-size-xl: 22px;
+    --font-size-2xl: 30px;
+  }
+
+  #hud-top {
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px 8px;
+  }
+
+  .hud-panel {
+    padding: 4px 8px;
+    gap: 10px;
+  }
+
+  #hud-bottom {
+    bottom: 8px;
+    gap: 6px;
+    padding: 6px 10px;
+  }
+
+  .hud-btn {
+    padding: 6px 12px;
+    font-size: var(--font-size-xs);
+  }
+
+  #dialog-container {
+    bottom: 90px;
+    width: 92vw;
+  }
+
+  .menu-btn {
+    width: 180px;
+    padding: 12px 0;
+  }
+}
+
+@media (max-width: 480px) {
+  #menu-title {
+    font-size: 26px;
+    letter-spacing: 4px;
+  }
+
+  #hud-bottom {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}
+
+/* 宽屏优化 */
+@media (min-width: 1920px) {
+  #dialog-container {
+    width: 700px;
+  }
+}

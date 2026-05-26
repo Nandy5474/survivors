@@ -1,0 +1,28 @@
+{
+  "name": "survivors",
+  "version": "0.2.0",
+  "description": "幸存者 - 丧尸末世生存策略RPG游戏",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "npx serve src -p 3000",
+    "deploy": "bash deploy.sh",
+    "deploy:dry": "bash deploy.sh -d"
+  },
+  "keywords": [
+    "game",
+    "rpg",
+    "zombie",
+    "survival",
+    "canvas",
+    "html5"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}

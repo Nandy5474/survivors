@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="description" content="幸存者 - 丧尸末世生存策略RPG">
+  <title>幸存者 | Survivors</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- ========== Canvas 渲染层 (自底向上) ========== -->
+  <div id="game-canvas-container">
+    <!-- 第一层：战争迷雾 -->
+    <canvas id="canvas-fog"></canvas>
+    <!-- 第二层：地图 -->
+    <canvas id="canvas-map"></canvas>
+    <!-- 第三层：实体（角色/丧尸/道具） -->
+    <canvas id="canvas-entity"></canvas>
+    <!-- 第四层：特效（粒子/屏幕震动） -->
+    <canvas id="canvas-fx"></canvas>
+  </div>
+
+  <!-- ========== UI 层 (HTML/CSS 覆盖) ========== -->
+  <div id="ui-layer">
+    <!-- 顶部 HUD -->
+    <div id="hud-top">
+      <div id="hud-resources" class="hud-panel">
+        <span class="hud-item" id="hud-gold">💰 0</span>
+        <span class="hud-item" id="hud-diamond">💎 0</span>
+        <span class="hud-item" id="hud-food">🍖 0</span>
+        <span class="hud-item" id="hud-water">💧 0</span>
+        <span class="hud-item" id="hud-ammo">🔫 0</span>
+      </div>
+      <div id="hud-stats" class="hud-panel">
+        <span class="hud-item" id="hud-hp">❤️ 100/100</span>
+        <span class="hud-item" id="hud-sanity">🧠 80/100</span>
+        <span class="hud-item" id="hud-day">📅 第 1 天</span>
+        <span class="hud-item" id="hud-time">🕐 08:00</span>
+      </div>
+    </div>
+
+    <!-- 底部操作栏 -->
+    <div id="hud-bottom">
+      <button class="hud-btn" id="btn-explore">探索</button>
+      <button class="hud-btn" id="btn-base">基地</button>
+      <button class="hud-btn" id="btn-inventory">背包</button>
+      <button class="hud-btn" id="btn-mercenary">佣兵</button>
+      <button class="hud-btn" id="btn-survivors">幸存者</button>
+      <button class="hud-btn" id="btn-menu">菜单</button>
+    </div>
+
+    <!-- 对话框容器 -->
+    <div id="dialog-container" class="hidden">
+      <div id="dialog-box">
+        <div id="dialog-speaker"></div>
+        <div id="dialog-text"></div>
+        <div id="dialog-choices"></div>
+      </div>
+    </div>
+
+    <!-- 通知容器 -->
+    <div id="notification-container"></div>
+
+    <!-- 加载画面 -->
+    <div id="loading-screen">
+      <div id="loading-bar-container">
+        <div id="loading-bar"></div>
+      </div>
+      <div id="loading-text">加载中...</div>
+    </div>
+
+    <!-- 菜单画面 -->
+    <div id="menu-screen" class="hidden">
+      <div id="menu-content">
+        <h1 id="menu-title">幸存者</h1>
+        <p id="menu-subtitle">Survivors</p>
+        <div id="menu-options">
+          <button class="menu-btn" id="menu-new-game">新游戏</button>
+          <button class="menu-btn" id="menu-continue">继续游戏</button>
+          <button class="menu-btn" id="menu-settings">设置</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 暂停遮罩 -->
+    <div id="pause-overlay" class="hidden">
+      <div id="pause-menu">
+        <h2>游戏暂停</h2>
+        <button class="menu-btn" id="pause-resume">继续</button>
+        <button class="menu-btn" id="pause-save">保存</button>
+        <button class="menu-btn" id="pause-quit">退出</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 游戏脚本 (ES Module) ========== -->
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
