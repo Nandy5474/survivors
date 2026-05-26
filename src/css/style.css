@@ -400,6 +400,31 @@ html, body {
 }
 
 /* -------------------- 响应式设计 -------------------- */
+/* 移动端全局设置 */
+body {
+  touch-action: pan-x pan-y pinch-zoom;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  overscroll-behavior: none;
+}
+
+/* 移动端横屏提示（通过 CSS 仅作用于移动设备） */
+@media (max-width: 1024px) and (orientation: portrait) {
+  body::before {
+    content: '请将屏幕横放以获得最佳游戏体验';
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(90deg);
+    color: var(--color-text-dim);
+    font-size: 18px;
+    letter-spacing: 2px;
+    z-index: 1000;
+    pointer-events: none;
+    animation: pulse 2s ease-in-out infinite;
+  }
+}
+
 @media (max-width: 768px) {
   :root {
     --font-size-xs: 11px;
@@ -452,6 +477,123 @@ html, body {
   #hud-bottom {
     flex-wrap: wrap;
     justify-content: center;
+  }
+}
+
+/* -------------------- 移动端触控专属 -------------------- */
+
+/* 虚拟摇杆 (JS 动态创建, 此处保留参考) */
+#mobile-joystick {
+  touch-action: none;
+  -webkit-touch-callout: none;
+}
+
+/* 移动端交互按钮 */
+#mobile-interact-btn {
+  transition: transform 0.12s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+#mobile-interact-btn:active {
+  background: rgba(230, 57, 70, 0.6) !important;
+  border-color: rgba(255, 100, 100, 0.7) !important;
+  transform: scale(0.88);
+}
+
+/* 移动端 HUD 优化 */
+@media (max-width: 768px) {
+  /* 顶部 HUD 更紧凑 */
+  #hud-top {
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 8px;
+  }
+
+  .hud-panel {
+    padding: 4px 8px;
+    gap: 8px;
+    border-radius: 6px;
+  }
+
+  .hud-item {
+    font-size: 10px;
+  }
+
+  /* 底部按钮栏适配虚拟摇杆高度 */
+  #hud-bottom {
+    bottom: 10px;
+    gap: 4px;
+    padding: 6px 8px;
+    border-radius: 10px;
+  }
+
+  .hud-btn {
+    padding: 8px 10px;
+    font-size: 11px;
+    border-radius: 6px;
+    min-width: 44px;
+    min-height: 36px;
+  }
+
+  /* 对话框调小 */
+  #dialog-container {
+    bottom: 100px;
+    width: 94vw;
+  }
+
+  #dialog-box {
+    padding: 12px 16px;
+    border-radius: 10px;
+  }
+
+  #dialog-speaker {
+    font-size: var(--font-size-md);
+  }
+
+  #dialog-text {
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+  }
+
+  .menu-btn {
+    width: 180px;
+    padding: 12px 0;
+    min-height: 44px;
+  }
+
+  /* 暂停菜单 */
+  #pause-menu h2 {
+    font-size: var(--font-size-lg);
+  }
+}
+
+/* 极小屏幕 (iPhone SE, 375px) */
+@media (max-width: 380px) {
+  :root {
+    --font-size-xs: 10px;
+    --font-size-sm: 11px;
+    --font-size-md: 13px;
+    --font-size-lg: 16px;
+    --font-size-xl: 20px;
+    --font-size-2xl: 24px;
+  }
+
+  .hud-item {
+    font-size: 9px;
+  }
+
+  .hud-btn {
+    padding: 6px 8px;
+    font-size: 10px;
+  }
+
+  .menu-btn {
+    width: 160px;
+    padding: 10px 0;
+  }
+
+  #menu-title {
+    font-size: 22px;
+    letter-spacing: 3px;
   }
 }
 
