@@ -6,6 +6,7 @@
 
 import BaseScene from './BaseScene.js';
 import EventBus, { GameEvents } from '../game/EventBus.js';
+import StateManager from '../game/StateManager.js';
 import { SaveStorage } from '../utils/Storage.js';
 
 export default class MenuScene extends BaseScene {
@@ -74,7 +75,13 @@ export default class MenuScene extends BaseScene {
 
   _bindEvents() {
     const onNewGame = () => {
-      this.game.switchScene('game', { mode: 'new' });
+      // Task 2: 新游戏重置状态，直接进入序章
+      StateManager.reset();
+      StateManager.set('story.chapter', 0);
+      StateManager.set('story.flags', {});
+      StateManager.set('story.flags.prologueComplete', false);
+      StateManager.set('player.hasWeapon', false);
+      this.game.switchScene('game', { chapter: 0, mode: 'new' });
     };
     const onContinue = () => {
       this.game.switchScene('game', { mode: 'continue' });
