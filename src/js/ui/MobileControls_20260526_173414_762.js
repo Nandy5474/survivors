@@ -1,8 +1,8 @@
 /**
  * MobileControls — 虚拟摇杆 + 交互按钮（移动端触控适配）
- * 修复版 v1.2：左下角 30%×70% 摇杆区，右下角 30%×70% 按钮区，顶部 30% 留给游戏
+ * 修复版：严格分区，左侧 35% 摇杆，右侧 35% 交互按钮，互不重叠
  * 半透明设计，不遮挡游戏画面
- * @version 1.2.0
+ * @version 1.1.0
  */
 
 export default class MobileControls {
@@ -35,13 +35,10 @@ export default class MobileControls {
     this._joystickCenter = { x: 0, y: 0 };
 
     /** @type {number} 左侧摇杆区域宽度占比（0~1） */
-    this._joystickZoneRatio = 0.30;
+    this._joystickZoneRatio = 0.35;
 
     /** @type {number} 右侧交互按钮区域宽度占比（0~1） */
-    this._buttonZoneRatio = 0.30;
-
-    /** @type {number} 底部操作区高度占比（0~1），低于此值才响应 */
-    this._bottomZoneRatio = 0.70;
+    this._buttonZoneRatio = 0.35;
   }
 
   /**
@@ -203,13 +200,11 @@ export default class MobileControls {
         const x = touch.clientX;
         const y = touch.clientY;
         const w = window.innerWidth;
-        const h = window.innerHeight;
-        const joystickZoneMax = w * this._joystickZoneRatio;     // 左侧 30%
-        const buttonZoneMin = w * (1 - this._buttonZoneRatio);   // 右侧 30%
-        const topZoneMin = h * (1 - this._bottomZoneRatio);      // 下方 70%（y > topZoneMin）
+        const joystickZoneMax = w * this._joystickZoneRatio;     // 左侧 35%
+        const buttonZoneMin = w * (1 - this._buttonZoneRatio);   // 右侧 35%
 
-        // === 区域 1：左下角 — 摇杆区 ===
-        if (x < joystickZoneMax && y > topZoneMin && !this._joystick.active) {
+        // === 区域 1：左侧摇杆区 ===
+        if (x < joystickZoneMax && !this._joystick.active) {
           e.preventDefault();
           e.stopPropagation();
           this._joystick.active = true;
@@ -219,8 +214,8 @@ export default class MobileControls {
           continue;
         }
 
-        // === 区域 2：右下角 — 交互按钮区 ===
-        if (x > buttonZoneMin && y > topZoneMin) {
+        // === 区域 2：右侧交互按钮区 ===
+        if (x > buttonZoneMin) {
           // 检查是否点中交互按钮
           const btn = this._interactBtn;
           if (btn && btn.style.display !== 'none') {
@@ -234,7 +229,7 @@ export default class MobileControls {
           continue;
         }
 
-        // === 区域 3：顶部 30% 或中间区域 → 不拦截，交给游戏层 ===
+        // === 区域 3：中间 30% 空白区 → 不拦截，交给游戏层 ===
       }
     };
 
@@ -275,7 +270,7 @@ export default class MobileControls {
     );
   }
 
-   /**
+  /**
    * 显示摇杆到触摸位置（限制在左侧区域内）
    */
   _showJoystick(x, y) {

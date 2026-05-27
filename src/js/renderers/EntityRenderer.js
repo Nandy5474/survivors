@@ -1,7 +1,7 @@
 /**
  * EntityRenderer — 实体渲染器
- * 负责绘制玩家、丧尸、幸存者、物资图标
- * @version 0.1.0
+ * 负责绘制玩家、丧尸、幸存者、物资图标、拾取物
+ * @version 0.2.0
  */
 
 import { RoomType } from '../game/MapGenerator.js';
@@ -201,6 +201,53 @@ export default class EntityRenderer {
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * 渲染拾取物
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {import('../entities/LootItem.js').default} loot
+   * @param {number} screenX
+   * @param {number} screenY
+   */
+  renderLootItem(ctx, loot, screenX, screenY) {
+    if (loot.collected) return;
+
+    const { color, icon } = loot.config;
+    const floatY = loot.floatOffsetY;
+
+    ctx.save();
+    ctx.translate(screenX, screenY + floatY);
+
+    // 发光光晕
+    ctx.beginPath();
+    ctx.arc(0, 0, loot.radius + 4, 0, Math.PI * 2);
+    ctx.fillStyle = color + '40';
+    ctx.fill();
+
+    // 拾取物圆点
+    ctx.beginPath();
+    ctx.arc(0, 0, loot.radius, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // 图标文字
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(icon, 0, 0);
+
+    // 数量标签
+    ctx.fillStyle = '#fff';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`x${loot.amount}`, 0, loot.radius + 10);
+
     ctx.restore();
   }
 

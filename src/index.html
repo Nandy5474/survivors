@@ -113,6 +113,43 @@
     </div>
   </div>
 
+  <!-- ========== 横屏提示 ========== -->
+  <div class="landscape-hint">请将屏幕横放以获得最佳游戏体验</div>
+
+  <!-- ========== 横屏提示隐藏逻辑 ========== -->
+  <script>
+    (function() {
+      const hint = document.querySelector('.landscape-hint');
+      if (!hint) return;
+
+      let hiddenForever = false;
+
+      function updateHint() {
+        if (hiddenForever) { hint.classList.add('hidden'); return; }
+        const isPortrait = window.matchMedia('(orientation: portrait)').matches;
+        hint.classList.toggle('hidden', !isPortrait);
+      }
+
+      function hideForever() {
+        if (hiddenForever) return;
+        hiddenForever = true;
+        hint.classList.add('hidden');
+      }
+
+      // 监听朝向变化
+      window.matchMedia('(orientation: portrait)').addEventListener('change', updateHint);
+      window.matchMedia('(orientation: landscape)').addEventListener('change', updateHint);
+
+      // 任意交互后永久隐藏
+      ['click', 'touchstart', 'keydown'].forEach(evt => {
+        window.addEventListener(evt, hideForever, { capture: true, once: false });
+      });
+
+      // 初始化
+      updateHint();
+    })();
+  </script>
+
   <!-- ========== 游戏脚本 (ES Module) ========== -->
   <script type="module" src="js/main.js"></script>
 </body>

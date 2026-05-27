@@ -20,6 +20,8 @@ function createDefaultState() {
       inventory: [],
       equipment: {},
       position: { x: 0, y: 0 },
+      /** 是否已获得武器（首次获得后丧尸开始出没） */
+      hasWeapon: false,
     },
 
     base: {

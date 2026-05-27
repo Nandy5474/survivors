@@ -1,8 +1,8 @@
 /**
  * MobileControls — 虚拟摇杆 + 交互按钮（移动端触控适配）
- * 左侧虚拟摇杆控制移动，右侧 E 键按钮控制交互
+ * 修复版 v1.2：左下角 30%×70% 摇杆区，右下角 30%×70% 按钮区，顶部 30% 留给游戏
  * 半透明设计，不遮挡游戏画面
- * @version 1.0.0
+ * @version 1.2.0
  */
 
 export default class MobileControls {
@@ -31,11 +31,17 @@ export default class MobileControls {
     /** @type {number} 拇指半径 */
     this._thumbRadius = 24;
 
-    /** @type {{x:number, y:number}} 摇杆中心（相对于容器） */
+    /** @type {{x:number, y:number}} 摇杆中心（世界坐标） */
     this._joystickCenter = { x: 0, y: 0 };
 
-    /** @type {number|null} 长按计时器 */
-    this._longPressTimer = null;
+    /** @type {number} 左侧摇杆区域宽度占比（0~1） */
+    this._joystickZoneRatio = 0.30;
+
+    /** @type {number} 右侧交互按钮区域宽度占比（0~1） */
+    this._buttonZoneRatio = 0.30;
+
+    /** @type {number} 底部操作区高度占比（0~1），低于此值才响应 */
+    this._bottomZoneRatio = 0.70;
   }
 
   /**
@@ -49,7 +55,7 @@ export default class MobileControls {
     this._bindTouchEvents();
 
     this._enabled = true;
-    console.log('[MobileControls] Initialized');
+    console.log('[MobileControls] Initialized (v1.1 — no overlap)');
   }
 
   /**
@@ -83,11 +89,12 @@ export default class MobileControls {
   }
 
   /**
-   * 创建虚拟摇杆 DOM
+   * 创建虚拟摇杆 DOM（严格限定在左侧 35% 区域）
    */
   _createJoystick() {
     const container = document.createElement('div');
     container.id = 'mobile-joystick';
+    // 初始位置：左侧 24px，底部 120px
     container.style.cssText = [
       'position: fixed',
       'left: 24px',
@@ -113,6 +120,7 @@ export default class MobileControls {
       'border: 2px solid rgba(255,255,255,0.18)',
       'backdrop-filter: blur(4px)',
       '-webkit-backdrop-filter: blur(4px)',
+      'pointer-events: none',
     ].join(';');
 
     // 拇指
@@ -137,16 +145,16 @@ export default class MobileControls {
 
     this._joystickContainer = container;
     this._joystickThumb = thumb;
-    this._joystickCenter = { x: 70, y: 70 }; // 容器中心
   }
 
   /**
-   * 创建右侧交互按钮（E 键）
+   * 创建右侧交互按钮（E 键），严格限定在右侧 35% 区域
    */
   _createInteractButton() {
     const btn = document.createElement('button');
     btn.id = 'mobile-interact-btn';
     btn.textContent = 'E';
+    btn.setAttribute('aria-label', '交互');
     btn.style.cssText = [
       'position: fixed',
       'right: 28px',
@@ -169,11 +177,13 @@ export default class MobileControls {
       '-webkit-user-select: none',
       'outline: none',
       'touch-action: manipulation',
+      'align-items: center',
+      'justify-content: center',
     ].join(';');
 
-    // 防止默认行为
-    btn.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
-    btn.addEventListener('mousedown', (e) => e.preventDefault());
+    // 防止默认行为 & 阻止冒泡
+    btn.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); }, { passive: false });
+    btn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
 
     document.getElementById('ui-layer').appendChild(btn);
     this._interactBtn = btn;
@@ -181,47 +191,59 @@ export default class MobileControls {
 
   /**
    * 绑定触摸事件（委托到 document，捕获阶段）
+   * 严格分区：左侧 35% 归摇杆，右侧 35% 归交互按钮，中间 30% 不处理
    */
   _bindTouchEvents() {
     /** @type {Function[]} 取消函数列表 */
     this._touchCleanups = [];
 
-    // 触摸开始
+    // 触摸开始（捕获阶段，先于所有子元素）
     const onTouchStart = (e) => {
       for (const touch of e.changedTouches) {
         const x = touch.clientX;
         const y = touch.clientY;
         const w = window.innerWidth;
+        const h = window.innerHeight;
+        const joystickZoneMax = w * this._joystickZoneRatio;     // 左侧 30%
+        const buttonZoneMin = w * (1 - this._buttonZoneRatio);   // 右侧 30%
+        const topZoneMin = h * (1 - this._bottomZoneRatio);      // 下方 70%（y > topZoneMin）
 
-        // 左侧区域 → 摇杆
-        if (x < w * 0.4 && !this._joystick.active) {
+        // === 区域 1：左下角 — 摇杆区 ===
+        if (x < joystickZoneMax && y > topZoneMin && !this._joystick.active) {
           e.preventDefault();
+          e.stopPropagation();
           this._joystick.active = true;
           this._joystick.id = touch.identifier;
           this._showJoystick(x, y);
           this._updateJoystick(x, y);
+          continue;
         }
 
-        // 右侧交互按钮区域
-        if (x > w * 0.6) {
+        // === 区域 2：右下角 — 交互按钮区 ===
+        if (x > buttonZoneMin && y > topZoneMin) {
           // 检查是否点中交互按钮
           const btn = this._interactBtn;
           if (btn && btn.style.display !== 'none') {
             const rect = btn.getBoundingClientRect();
             if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
               e.preventDefault();
+              e.stopPropagation();
               this._onInteractStart();
             }
           }
+          continue;
         }
+
+        // === 区域 3：顶部 30% 或中间区域 → 不拦截，交给游戏层 ===
       }
     };
 
-    // 触摸移动
+    // 触摸移动（仅更新摇杆，按钮区不响应移动）
     const onTouchMove = (e) => {
       for (const touch of e.changedTouches) {
         if (touch.identifier === this._joystick.id) {
           e.preventDefault();
+          e.stopPropagation();
           this._updateJoystick(touch.clientX, touch.clientY);
         }
       }
@@ -253,19 +275,22 @@ export default class MobileControls {
     );
   }
 
-  /**
-   * 显示摇杆到触摸位置
+   /**
+   * 显示摇杆到触摸位置（限制在左侧区域内）
    */
   _showJoystick(x, y) {
     const container = this._joystickContainer;
     if (!container) return;
 
+    const maxX = window.innerWidth * this._joystickZoneRatio - 70; // 不超出左侧区
+    const clampedX = Math.max(24, Math.min(x, maxX));
+
     container.style.display = 'block';
-    container.style.left = `${x - 70}px`;
+    container.style.left = `${clampedX - 70}px`;
     container.style.bottom = 'auto';
     container.style.top = `${y - 70}px`;
 
-    this._joystickCenter = { x, y };
+    this._joystickCenter = { x: clampedX, y };
   }
 
   /**
@@ -350,8 +375,6 @@ export default class MobileControls {
   setInteractButtonVisible(visible) {
     if (!this._interactBtn) return;
     this._interactBtn.style.display = visible ? 'flex' : 'none';
-    this._interactBtn.style.alignItems = 'center';
-    this._interactBtn.style.justifyContent = 'center';
   }
 
   /**

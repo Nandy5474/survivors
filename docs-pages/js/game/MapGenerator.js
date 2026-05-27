@@ -26,6 +26,14 @@ export const TileType = Object.freeze({
   DOOR: 3,
 });
 
+/** 门朝向 */
+export const DoorSide = Object.freeze({
+  TOP: 'top',
+  BOTTOM: 'bottom',
+  LEFT: 'left',
+  RIGHT: 'right',
+});
+
 /** 地砖像素尺寸 */
 export const TILE_SIZE = 64;
 
@@ -49,6 +57,8 @@ export class Room {
     this.hasSupplies = false;
     this.supplyType = null;
     this.boxGroupId = -1;
+    /** @type {{ gx: number, gy: number, side: string }[]} 门在墙壁上的网格坐标 */
+    this.doors = [];
   }
 
   get worldX() { return this.gridX * TILE_SIZE; }
@@ -115,6 +125,9 @@ export class MapData {
 
     this.playerStart = { x: 0, y: 0 };
     this.exitPoint = { x: 0, y: 0 };
+
+    /** @type {import('../entities/LootItem.js').LootItem[]} 地图拾取物列表 */
+    this.lootItems = [];
   }
 
   /**
@@ -124,7 +137,7 @@ export class MapData {
     if (gx < 0 || gx >= this.gridW || gy < 0 || gy >= this.gridH) return false;
     const row = this.tiles[gy];
     if (!row) return false;
-    return row[gx] !== TileType.WALL;
+    return row[gx] === TileType.FLOOR || row[gx] === TileType.CORRIDOR || row[gx] === TileType.DOOR;
   }
 
   /**
@@ -167,11 +180,14 @@ export default class MapGenerator {
    * @param {number} seed - 随机种子
    * @param {number} [gridW=40] - 地图网格宽度
    * @param {number} [gridH=30] - 地图网格高度
+   * @param {object} [options={}] - 可选配置
+   * @param {boolean} [options.hasWeapon=false] - 玩家是否已获得武器
    */
-  constructor(seed, gridW = 40, gridH = 30) {
+  constructor(seed, gridW = 40, gridH = 30, options = {}) {
     this.rng = new SeededRandom(seed);
     this.gridW = gridW;
     this.gridH = gridH;
+    this.options = options;
 
     // 箱组配置
     this._boxGroupCols = 4;
@@ -195,6 +211,12 @@ export default class MapGenerator {
 
     // Step 3: 在箱组内雕刻房间
     this._carveRooms(map);
+
+    // Step 3.5: 生成房间门
+    this._generateDoors(map);
+
+    // Step 3.6: 生成地图拾取物
+    this._generateLootItems(map);
 
     // Step 4: 箱组内部走廊连接
     this._createInternalCorridors(map);
@@ -296,13 +318,24 @@ export default class MapGenerator {
 
   /** 按权重分配房间类型 */
   _assignRoomType() {
+    const hasWeapon = this.options.hasWeapon !== false;
+    if (hasWeapon) {
+      return this.rng.weightedPick({
+        [RoomType.EMPTY]: 30,
+        [RoomType.SMALL_BOX]: 20,
+        [RoomType.LARGE_BOX]: 5,
+        [RoomType.SUPPLY]: 20,
+        [RoomType.ZOMBIE]: 15,
+        [RoomType.SURVIVOR]: 10,
+      });
+    }
+    // 无武器时不生成丧尸房，权重重新分配
     return this.rng.weightedPick({
-      [RoomType.EMPTY]: 30,
-      [RoomType.SMALL_BOX]: 20,
-      [RoomType.LARGE_BOX]: 5,
-      [RoomType.SUPPLY]: 20,
-      [RoomType.ZOMBIE]: 15,
-      [RoomType.SURVIVOR]: 10,
+      [RoomType.EMPTY]: 35,
+      [RoomType.SMALL_BOX]: 22,
+      [RoomType.LARGE_BOX]: 6,
+      [RoomType.SUPPLY]: 24,
+      [RoomType.SURVIVOR]: 13,
     });
   }
 
@@ -390,6 +423,160 @@ export default class MapGenerator {
           }
         }
       }
+    }
+  }
+
+  // ---- 私有：门生成 ----
+
+  /**
+   * 为每个房间在墙壁上随机开至少 1 扇门
+   */
+  _generateDoors(map) {
+    for (const room of map.rooms) {
+      const rx = room.gridX;
+      const ry = room.gridY;
+      const rw = room.gridW;
+      const rh = room.gridH;
+
+      // 收集四面墙上的候选位置
+      const candidates = [];
+
+      if (rw >= 2 && rh >= 2) {
+        // 标准房间（≥2×2）：排除角落
+        this._collectDoorCandidates(rx, ry, rw, rh, candidates, true);
+      } else {
+        // 极小房间（1×N 或 N×1）：包含角落
+        this._collectDoorCandidates(rx, ry, rw, rh, candidates, false);
+      }
+
+      if (candidates.length === 0) continue;
+
+      // 随机选 1~2 个位置开门
+      const doorCount = this.rng.int(1, Math.min(2, candidates.length));
+      const shuffled = [...candidates].sort(() => this.rng.float() - 0.5);
+
+      for (let i = 0; i < doorCount; i++) {
+        const { gx, gy, side } = shuffled[i];
+        if (map.tiles[gy]?.[gx] === TileType.WALL) {
+          map.tiles[gy][gx] = TileType.DOOR;
+          room.doors.push({ gx, gy, side });
+        }
+      }
+
+      // 强制兜底：如果随机后仍未开门，选第一个候选强制开门
+      if (room.doors.length === 0 && candidates.length > 0) {
+        const { gx, gy, side } = candidates[0];
+        map.tiles[gy][gx] = TileType.DOOR;
+        room.doors.push({ gx, gy, side });
+      }
+    }
+  }
+
+  /**
+   * 收集房间墙壁上的门候选位置
+   * @param {number} rx
+   * @param {number} ry
+   * @param {number} rw
+   * @param {number} rh
+   * @param {Array} candidates
+   * @param {boolean} excludeCorners - 是否排除角落
+   */
+  _collectDoorCandidates(rx, ry, rw, rh, candidates, excludeCorners) {
+    const innerPad = excludeCorners ? 1 : 0;
+
+    // 上墙（y = ry - 1）
+    if (ry > 0) {
+      for (let x = rx + innerPad; x < rx + rw - innerPad; x++) {
+        if (x >= 0 && x < this.gridW) {
+          candidates.push({ gx: x, gy: ry - 1, side: DoorSide.TOP });
+        }
+      }
+    }
+    // 下墙（y = ry + rh）
+    if (ry + rh < this.gridH) {
+      for (let x = rx + innerPad; x < rx + rw - innerPad; x++) {
+        if (x >= 0 && x < this.gridW) {
+          candidates.push({ gx: x, gy: ry + rh, side: DoorSide.BOTTOM });
+        }
+      }
+    }
+    // 左墙（x = rx - 1）
+    if (rx > 0) {
+      for (let y = ry + innerPad; y < ry + rh - innerPad; y++) {
+        if (y >= 0 && y < this.gridH) {
+          candidates.push({ gx: rx - 1, gy: y, side: DoorSide.LEFT });
+        }
+      }
+    }
+    // 右墙（x = rx + rw）
+    if (rx + rw < this.gridW) {
+      for (let y = ry + innerPad; y < ry + rh - innerPad; y++) {
+        if (y >= 0 && y < this.gridH) {
+          candidates.push({ gx: rx + rw, gy: y, side: DoorSide.RIGHT });
+        }
+      }
+    }
+  }
+
+  // ---- 私有：拾取物生成 ----
+
+  /**
+   * 在地图走廊和空房间地板上随机生成拾取物
+   */
+  _generateLootItems(map) {
+    const LootType = ['ammo', 'medkit', 'parts', 'food'];
+    const corridorTiles = [];
+
+    // 收集所有走廊/空房间的地板格
+    for (let y = 0; y < this.gridH; y++) {
+      for (let x = 0; x < this.gridW; x++) {
+        if (map.tiles[y][x] === TileType.CORRIDOR) {
+          corridorTiles.push({ gx: x, gy: y });
+        }
+      }
+    }
+
+    // 也收集空房间内部地板（至少距离墙 1 格）
+    for (const room of map.rooms) {
+      if (room.type !== RoomType.EMPTY) continue;
+      for (let dy = 1; dy < room.gridH - 1; dy++) {
+        for (let dx = 1; dx < room.gridW - 1; dx++) {
+          const gx = room.gridX + dx;
+          const gy = room.gridY + dy;
+          if (map.tiles[gy]?.[gx] === TileType.FLOOR) {
+            corridorTiles.push({ gx, gy });
+          }
+        }
+      }
+    }
+
+    if (corridorTiles.length === 0) return;
+
+    // 随机散布拾取物（约每 50 格一个）
+    const lootCount = Math.max(5, Math.floor(corridorTiles.length / 50));
+    const shuffled = [...corridorTiles].sort(() => this.rng.float() - 0.5);
+
+    for (let i = 0; i < Math.min(lootCount, shuffled.length); i++) {
+      const { gx, gy } = shuffled[i];
+      const type = LootType[this.rng.int(0, LootType.length - 1)];
+      const amount = this._lootAmount(type);
+      const wx = gx * TILE_SIZE + TILE_SIZE / 2;
+      const wy = gy * TILE_SIZE + TILE_SIZE / 2;
+
+      map.lootItems.push({
+        x: wx, y: wy, type, amount, collected: false,
+        gridX: gx, gridY: gy,
+      });
+    }
+  }
+
+  _lootAmount(type) {
+    switch (type) {
+      case 'ammo': return this.rng.int(3, 10);
+      case 'medkit': return this.rng.int(1, 2);
+      case 'parts': return this.rng.int(1, 4);
+      case 'food': return this.rng.int(1, 3);
+      default: return 1;
     }
   }
 

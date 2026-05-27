@@ -1,7 +1,8 @@
 /**
  * GameScene — 主游戏场景
  * 集成地图生成、玩家控制、实体管理、渲染系统
- * @version 0.3.0
+ * v0.4.0：集成 AP 回合制战斗系统
+ * @version 0.4.0
  */
 
 import BaseScene from './BaseScene.js';
@@ -15,7 +16,12 @@ import Zombie from '../entities/Zombie.js';
 import Survivor, { SurvivorRole } from '../entities/Survivor.js';
 import MapRenderer from '../renderers/MapRenderer.js';
 import EntityRenderer from '../renderers/EntityRenderer.js';
+import LootItem, { LootType, LOOT_PICKUP_DIST } from '../entities/LootItem.js';
 import { generateSeed } from '../utils/Random.js';
+
+// 战斗系统
+import CombatManager from '../combat/CombatManager.js';
+import CombatUI from '../combat/CombatUI.js';
 
 // 移动端控制
 import MobileControls from '../ui/MobileControls.js';
@@ -40,6 +46,9 @@ const SURVIVOR_DIALOGUES = [
   ['我在这片区域搜索物资，没想到遇到了你。', '这附近还有一个废弃的仓库，可能有我们需要的东西。'],
   ['谢谢你发现了我。我有些物资可以分享。'],
 ];
+
+/** 触发战斗的索敌距离（像素） */
+const COMBAT_TRIGGER_DIST = 36;
 
 export default class GameScene extends BaseScene {
   constructor() {
@@ -69,6 +78,9 @@ export default class GameScene extends BaseScene {
     /** @type {Survivor[]} */
     this._survivors = [];
 
+    /** @type {LootItem[]} 地图拾取物 */
+    this._lootItems = [];
+
     /** @type {MapRenderer|null} */
     this._mapRenderer = null;
 
@@ -86,6 +98,17 @@ export default class GameScene extends BaseScene {
 
     /** @type {boolean} 探索系统是否已初始化 */
     this._explorationReady = false;
+
+    // --- 战斗系统 ---
+
+    /** @type {CombatManager|null} */
+    this._combatManager = null;
+
+    /** @type {CombatUI|null} */
+    this._combatUI = null;
+
+    /** @type {Zombie|null} 当前战斗的丧尸引用 */
+    this._combatTargetZombie = null;
 
     // --- 其他 ---
 
@@ -132,6 +155,10 @@ export default class GameScene extends BaseScene {
 
     // 更新 HUD
     this._refreshHUD();
+
+    // 初始化战斗系统
+    this._combatManager = new CombatManager(this.game);
+    this._combatUI = new CombatUI(this.game, this._combatManager);
 
     // 初始化移动端控制（仅在移动设备上）
     if (this._isMobile) {
@@ -201,6 +228,12 @@ export default class GameScene extends BaseScene {
     this._unbindHudButtons();
     this._unsubscribeAll();
 
+    // 销毁战斗 UI
+    if (this._combatUI) {
+      this._combatUI.destroy();
+      this._combatUI = null;
+    }
+
     // 销毁移动端控制
     if (this._mobileControls) {
       this._mobileControls.destroy();
@@ -235,10 +268,11 @@ export default class GameScene extends BaseScene {
 
   _initExploration() {
     const seed = generateSeed();
-    console.log('[GameScene] Generating map with seed:', seed);
+    const hasWeapon = StateManager.get('player.hasWeapon') === true;
+    console.log('[GameScene] Generating map with seed:', seed, '| hasWeapon:', hasWeapon);
 
-    // 生成地图
-    const generator = new MapGenerator(seed, 40, 30);
+    // 生成地图（传入 hasWeapon 状态）
+    const generator = new MapGenerator(seed, 40, 30, { hasWeapon });
     this._mapData = generator.generate();
 
     // 创建渲染器
@@ -253,6 +287,9 @@ export default class GameScene extends BaseScene {
 
     // 生成实体
     this._spawnEntities();
+
+    // 初始化拾取物
+    this._initLootItems();
 
     // 初始化相机到玩家位置
     const canvas = this.game?.getLayer(1)?.canvas;
@@ -276,6 +313,11 @@ export default class GameScene extends BaseScene {
     this.clearLayer(2);
 
     this._explorationReady = true;
+
+    EventBus.emit(GameEvents.EXPLORATION_START, {
+      seed,
+      roomCount: this._mapData.rooms.length,
+    });
 
     EventBus.emit(GameEvents.UI_NOTIFICATION, {
       type: 'info',
@@ -359,6 +401,64 @@ export default class GameScene extends BaseScene {
     return pts;
   }
 
+  /**
+   * 从地图数据初始化拾取物列表
+   */
+  _initLootItems() {
+    this._lootItems = [];
+    if (!this._mapData || !this._mapData.lootItems) return;
+
+    for (const raw of this._mapData.lootItems) {
+      const loot = new LootItem(raw.x, raw.y, raw.type, raw.amount);
+      this._lootItems.push(loot);
+    }
+
+    console.log(`[GameScene] Initialized ${this._lootItems.length} loot items on map`);
+  }
+
+  /**
+   * 更新拾取物动画并检测自动拾取
+   * @param {number} dt
+   */
+  _updateLootPickup(dt) {
+    if (!this._player) return;
+
+    for (const loot of this._lootItems) {
+      if (loot.collected) continue;
+
+      // 浮动动画
+      loot.update(dt);
+
+      // 检测拾取范围
+      if (loot.isInPickupRange(this._player.x, this._player.y)) {
+        loot.collected = true;
+        this._onLootCollected(loot);
+      }
+    }
+  }
+
+  /**
+   * 拾取物收集回调
+   * @param {LootItem} loot
+   */
+  _onLootCollected(loot) {
+    const labels = {
+      ammo: '弹药', medkit: '医疗包', parts: '零件', food: '食物',
+    };
+    const label = labels[loot.type] || loot.type;
+
+    EventBus.emit(GameEvents.UI_NOTIFICATION, {
+      type: 'success',
+      message: `拾取了 ${label} x${loot.amount}`,
+    });
+
+    // 将物资应用到全局状态
+    this._applySupplyToState(loot.type);
+
+    // 移除已收集的拾取物
+    this._lootItems = this._lootItems.filter(item => !item.collected);
+  }
+
   // ========== 探索更新 ==========
 
   /** @param {number} dt */
@@ -377,13 +477,31 @@ export default class GameScene extends BaseScene {
       this._onRoomEntered(enteredRoom);
     }
 
-    // 3) 更新丧尸
+    // 3) 更新丧尸 + 检测战斗触发
     for (const zombie of this._zombies) {
       zombie.update(dt, this._mapData, this._player);
+
+      // 检测是否触发战斗（距离足够近 + 丧尸处于 CHASE 状态）
+      if (zombie.isAlive && zombie.state === 'chase') {
+        const dist = this._distanceBetween(this._player, zombie);
+        if (dist < COMBAT_TRIGGER_DIST && !this._combatManager.inCombat) {
+          this._startCombat(zombie);
+        }
+      }
     }
+
+    // 3.5) 更新拾取物 + 检测自动拾取
+    this._updateLootPickup(dt);
 
     // 4) 更新相机（平滑跟随玩家）
     this._updateCamera(dt);
+  }
+
+  /** 两实体间距离 */
+  _distanceBetween(a, b) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
   }
 
   /** @returns {number} X 输入归一化 [-1, 0, 1] */
@@ -435,7 +553,13 @@ export default class GameScene extends BaseScene {
       showInteract = true;
     }
     if (room.type === RoomType.ZOMBIE) {
-      msg += ' · 发现丧尸！';
+      msg += ' · 发现丧尸！准备战斗';
+      // 进入丧尸房间时，触发与最近丧尸的战斗
+      const nearest = this._findNearestZombie(room, 200);
+      if (nearest && !this._combatManager.inCombat) {
+        this._startCombat(nearest);
+        return;
+      }
     }
     if (room.type === RoomType.SURVIVOR) {
       msg += ' · 发现幸存者！按 E 对话';
@@ -448,6 +572,23 @@ export default class GameScene extends BaseScene {
     }
 
     EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'info', message: msg });
+  }
+
+  /** 在房间内找最近的存活丧尸 */
+  _findNearestZombie(room, maxDist) {
+    let nearest = null;
+    let minDist = maxDist;
+    for (const z of this._zombies) {
+      if (!z.isAlive) continue;
+      const inRoom = this._mapData.getContainingRoom(z.x, z.y);
+      if (!inRoom || inRoom.id !== room.id) continue;
+      const dist = this._distanceBetween(this._player, z);
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = z;
+      }
+    }
+    return nearest;
   }
 
   /** 相机平滑跟随 */
@@ -470,15 +611,81 @@ export default class GameScene extends BaseScene {
     this._camera.y = Math.max(0, Math.min(maxCamY, this._camera.y));
   }
 
+  // ========== 战斗系统 ==========
+
+  /**
+   * 开始战斗
+   * @param {Zombie} zombie
+   */
+  _startCombat(zombie) {
+    if (this._combatManager.inCombat) return;
+
+    this._combatTargetZombie = zombie;
+    this.mode = GameMode.COMBAT;
+
+    // 暂停探索的丧尸 AI（战斗内由 CombatManager 控制）
+    zombie.state = 'idle';
+
+    this._combatManager.startCombat(zombie, this._player, this._player.currentRoom);
+
+    EventBus.emit(GameEvents.UI_NOTIFICATION, {
+      type: 'warning',
+      message: `战斗开始！面对 ${zombie.isElite ? '精英丧尸' : '普通丧尸'}！`,
+    });
+
+    console.log('[GameScene] Combat started with zombie:', zombie.isElite ? 'ELITE' : 'NORMAL');
+  }
+
+  /** @param {number} dt */
+  _updateCombat(dt) {
+    if (!this._combatManager.inCombat) {
+      // 战斗已结束，切回探索
+      this._endCombatCheck();
+      return;
+    }
+
+    // CombatUI 的渲染在 render() 中处理
+    // 战斗逻辑由 CombatManager.playerAction() 驱动（按钮点击）
+  }
+
+  /**
+   * 检查战斗是否结束
+   */
+  _endCombatCheck() {
+    if (!this._combatManager.inCombat && this.mode === GameMode.COMBAT) {
+      // 战斗已结束，切回探索模式
+      this.mode = GameMode.EXPLORATION;
+
+      // 恢复丧尸状态
+      if (this._combatTargetZombie && this._combatTargetZombie.isAlive) {
+        this._combatTargetZombie.state = 'patrol';
+      }
+      this._combatTargetZombie = null;
+
+      // 清空 fx 层（CombatUI 绘制的内容）
+      this.clearLayer(3);
+
+      console.log('[GameScene] Combat ended, returned to exploration');
+    }
+  }
+
   // ========== 键盘事件 ==========
 
   _bindKeyEvents() {
     this._onKeyDown = (e) => {
       this._keys.add(e.key);
 
-      // E 键：交互
-      if (e.key === 'e' || e.key === 'E') {
+      // E 键：交互 / 战斗中选择攻击
+      if ((e.key === 'e' || e.key === 'E')) {
         this._onInteract();
+      }
+
+      // 战斗中的快捷键（1=攻击，2=防御，3=撤退，4=等待）
+      if (this.mode === GameMode.COMBAT && this._combatManager.inCombat) {
+        if (e.key === '1') this._combatManager.playerAction('attack');
+        if (e.key === '2') this._combatManager.playerAction('defend');
+        if (e.key === '3') this._combatManager.playerAction('retreat');
+        if (e.key === '4') this._combatManager.playerAction('wait');
       }
 
       // 阻止方向键滚动页面
@@ -500,10 +707,16 @@ export default class GameScene extends BaseScene {
     if (this._onKeyUp) window.removeEventListener('keyup', this._onKeyUp);
   }
 
-  /** 交互：收集物资 or 对话幸存者 */
+  /** 交互：收集物资 or 对话幸存者 or 战斗中选择 */
   _onInteract() {
     if (!this._player || !this._mapData) return;
     if (this._isPaused) return;
+
+    // 战斗中：E 键 = 攻击
+    if (this.mode === GameMode.COMBAT && this._combatManager.inCombat) {
+      this._combatManager.playerAction('attack');
+      return;
+    }
 
     // 尝试收集物资
     if (this._player.currentRoom && this._player.currentRoom.hasSupplies) {
@@ -545,6 +758,18 @@ export default class GameScene extends BaseScene {
 
   /** 将物资应用到全局状态 */
   _applySupplyToState(type) {
+    if (type === 'medkit') {
+      // 医疗包：治疗玩家
+      const hp = StateManager.get('player.hp') || 0;
+      const maxHp = StateManager.get('player.maxHp') || 100;
+      const heal = Math.min(30, maxHp - hp);
+      if (heal > 0) {
+        StateManager.set('player.hp', hp + heal);
+      }
+      this._refreshHUD();
+      return;
+    }
+
     const path = {
       food: 'globalResources.food',
       water: 'globalResources.water',
@@ -557,6 +782,16 @@ export default class GameScene extends BaseScene {
       const current = StateManager.get(path) || 0;
       StateManager.set(path, current + this._randomSupplyAmount(type));
       this._refreshHUD();
+    }
+
+    // 首次获得弹药 → 获得武器，通知玩家并允许后续生成丧尸
+    if (type === 'ammo' && !StateManager.get('player.hasWeapon')) {
+      StateManager.set('player.hasWeapon', true);
+      EventBus.emit(GameEvents.UI_NOTIFICATION, {
+        type: 'success',
+        message: '获得武器！丧尸开始出没…',
+      });
+      console.log('[GameScene] Player obtained first weapon — zombies will now spawn');
     }
   }
 
@@ -584,7 +819,7 @@ export default class GameScene extends BaseScene {
     return nearest;
   }
 
-  // ========== 探索渲染 ==========
+  // ========== 渲染 ==========
 
   _renderExploration() {
     if (!this._mapData || !this._mapRenderer || !this._entityRenderer) return;
@@ -641,6 +876,14 @@ export default class GameScene extends BaseScene {
         );
       }
 
+      // 渲染拾取物
+      for (const loot of this._lootItems) {
+        this._entityRenderer.renderLootItem(
+          entityCtx, loot,
+          loot.x, loot.y
+        );
+      }
+
       entityCtx.restore();
     }
 
@@ -660,24 +903,22 @@ export default class GameScene extends BaseScene {
     }
   }
 
-  // ========== 原有方法 (保持不变或微调) ==========
-
-  /** @param {number} dt */
-  _updateBase(dt) {
-    // Phase 2+ 实现基地逻辑
-  }
-
-  /** @param {number} dt */
-  _updateCombat(dt) {
-    // Phase 3+ 实现战斗逻辑
+  _renderCombat() {
+    // CombatUI 负责绘制战斗界面
+    if (this._combatUI) {
+      this._combatUI.render(1 / 60); // 传入固定帧间隔
+    }
   }
 
   _renderBase() {
     this._drawBaseBackground();
   }
 
-  _renderCombat() {
-    // Phase 3+ 实现战斗渲染
+  // ========== 原有方法 (保持不变) ==========
+
+  /** @param {number} dt */
+  _updateBase(dt) {
+    // Phase 2+ 实现基地逻辑
   }
 
   _drawBaseBackground() {
@@ -753,6 +994,13 @@ export default class GameScene extends BaseScene {
       })
     );
 
+    // 战斗结束事件
+    this._unsubscribers.push(
+      EventBus.on(GameEvents.COMBAT_END, (result) => {
+        this._onCombatEnd(result);
+      })
+    );
+
     const onEscape = (e) => {
       if (e.key === 'Escape') {
         if (this._isPaused) {
@@ -764,6 +1012,34 @@ export default class GameScene extends BaseScene {
     };
     window.addEventListener('keydown', onEscape);
     this._unsubscribers.push(() => window.removeEventListener('keydown', onEscape));
+  }
+
+  /**
+   * 战斗结束回调
+   * @param {object} result - CombatManager._endCombat() 的返回值
+   */
+  _onCombatEnd(result) {
+    if (result.victory) {
+      EventBus.emit(GameEvents.UI_NOTIFICATION, {
+        type: 'success',
+        message: `战斗胜利！获得 ${result.loot.length} 件物资`,
+      });
+    } else if (result.reason === 'retreat') {
+      EventBus.emit(GameEvents.UI_NOTIFICATION, {
+        type: 'warning',
+        message: '撤退成功！',
+      });
+    } else {
+      EventBus.emit(GameEvents.UI_NOTIFICATION, {
+        type: 'error',
+        message: '战斗失败...',
+      });
+    }
+
+    // 延迟切回探索模式（让玩家看到结果）
+    setTimeout(() => {
+      this._endCombatCheck();
+    }, 1500);
   }
 
   _bindPauseEvents() {

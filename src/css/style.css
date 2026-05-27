@@ -131,8 +131,7 @@ html, body {
 #hud-bottom {
   position: fixed;
   bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
+  right: 16px;
   display: flex;
   gap: 10px;
   background: var(--color-panel);
@@ -408,24 +407,51 @@ body {
   overscroll-behavior: none;
 }
 
-/* 移动端横屏提示（通过 CSS 仅作用于移动设备） */
-@media (max-width: 1024px) and (orientation: portrait) {
-  body::before {
-    content: '请将屏幕横放以获得最佳游戏体验';
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%) rotate(90deg);
-    color: var(--color-text-dim);
-    font-size: 18px;
-    letter-spacing: 2px;
-    z-index: 1000;
-    pointer-events: none;
-    animation: pulse 2s ease-in-out infinite;
+/* -------------------- 横屏提示（竖排文字） -------------------- */
+.landscape-hint {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1000;
+  pointer-events: none;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  color: #e0e0e0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 8px;
+  background: rgba(10, 10, 30, 0.75);
+  padding: 24px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.landscape-hint.hidden {
+  display: none !important;
+}
+
+/* 横屏时通过媒体查询隐藏 */
+@media (orientation: landscape) {
+  .landscape-hint:not(.hidden) {
+    display: none !important;
   }
 }
 
+/* 移动端横屏提示（通过 CSS 仅作用于移动设备） */
+@media (max-width: 1024px) and (orientation: portrait) {
+  /* 已在 JS 中控制显示/隐藏 */
+}
+
 @media (max-width: 768px) {
+  .landscape-hint {
+    font-size: 16px;
+    letter-spacing: 4px;
+  }
+
   :root {
     --font-size-xs: 11px;
     --font-size-sm: 12px;
@@ -448,6 +474,7 @@ body {
 
   #hud-bottom {
     bottom: 8px;
+    right: 8px;
     gap: 6px;
     padding: 6px 10px;
   }
@@ -476,7 +503,7 @@ body {
 
   #hud-bottom {
     flex-wrap: wrap;
-    justify-content: center;
+    justify-content: flex-end;
   }
 }
 
@@ -521,6 +548,7 @@ body {
   /* 底部按钮栏适配虚拟摇杆高度 */
   #hud-bottom {
     bottom: 10px;
+    right: 10px;
     gap: 4px;
     padding: 6px 8px;
     border-radius: 10px;

@@ -16,7 +16,6 @@ import Zombie from '../entities/Zombie.js';
 import Survivor, { SurvivorRole } from '../entities/Survivor.js';
 import MapRenderer from '../renderers/MapRenderer.js';
 import EntityRenderer from '../renderers/EntityRenderer.js';
-import LootItem, { LootType, LOOT_PICKUP_DIST } from '../entities/LootItem.js';
 import { generateSeed } from '../utils/Random.js';
 
 // 战斗系统
@@ -77,9 +76,6 @@ export default class GameScene extends BaseScene {
 
     /** @type {Survivor[]} */
     this._survivors = [];
-
-    /** @type {LootItem[]} 地图拾取物 */
-    this._lootItems = [];
 
     /** @type {MapRenderer|null} */
     this._mapRenderer = null;
@@ -268,11 +264,10 @@ export default class GameScene extends BaseScene {
 
   _initExploration() {
     const seed = generateSeed();
-    const hasWeapon = StateManager.get('player.hasWeapon') === true;
-    console.log('[GameScene] Generating map with seed:', seed, '| hasWeapon:', hasWeapon);
+    console.log('[GameScene] Generating map with seed:', seed);
 
-    // 生成地图（传入 hasWeapon 状态）
-    const generator = new MapGenerator(seed, 40, 30, { hasWeapon });
+    // 生成地图
+    const generator = new MapGenerator(seed, 40, 30);
     this._mapData = generator.generate();
 
     // 创建渲染器
@@ -287,9 +282,6 @@ export default class GameScene extends BaseScene {
 
     // 生成实体
     this._spawnEntities();
-
-    // 初始化拾取物
-    this._initLootItems();
 
     // 初始化相机到玩家位置
     const canvas = this.game?.getLayer(1)?.canvas;
@@ -401,64 +393,6 @@ export default class GameScene extends BaseScene {
     return pts;
   }
 
-  /**
-   * 从地图数据初始化拾取物列表
-   */
-  _initLootItems() {
-    this._lootItems = [];
-    if (!this._mapData || !this._mapData.lootItems) return;
-
-    for (const raw of this._mapData.lootItems) {
-      const loot = new LootItem(raw.x, raw.y, raw.type, raw.amount);
-      this._lootItems.push(loot);
-    }
-
-    console.log(`[GameScene] Initialized ${this._lootItems.length} loot items on map`);
-  }
-
-  /**
-   * 更新拾取物动画并检测自动拾取
-   * @param {number} dt
-   */
-  _updateLootPickup(dt) {
-    if (!this._player) return;
-
-    for (const loot of this._lootItems) {
-      if (loot.collected) continue;
-
-      // 浮动动画
-      loot.update(dt);
-
-      // 检测拾取范围
-      if (loot.isInPickupRange(this._player.x, this._player.y)) {
-        loot.collected = true;
-        this._onLootCollected(loot);
-      }
-    }
-  }
-
-  /**
-   * 拾取物收集回调
-   * @param {LootItem} loot
-   */
-  _onLootCollected(loot) {
-    const labels = {
-      ammo: '弹药', medkit: '医疗包', parts: '零件', food: '食物',
-    };
-    const label = labels[loot.type] || loot.type;
-
-    EventBus.emit(GameEvents.UI_NOTIFICATION, {
-      type: 'success',
-      message: `拾取了 ${label} x${loot.amount}`,
-    });
-
-    // 将物资应用到全局状态
-    this._applySupplyToState(loot.type);
-
-    // 移除已收集的拾取物
-    this._lootItems = this._lootItems.filter(item => !item.collected);
-  }
-
   // ========== 探索更新 ==========
 
   /** @param {number} dt */
@@ -489,9 +423,6 @@ export default class GameScene extends BaseScene {
         }
       }
     }
-
-    // 3.5) 更新拾取物 + 检测自动拾取
-    this._updateLootPickup(dt);
 
     // 4) 更新相机（平滑跟随玩家）
     this._updateCamera(dt);
@@ -758,18 +689,6 @@ export default class GameScene extends BaseScene {
 
   /** 将物资应用到全局状态 */
   _applySupplyToState(type) {
-    if (type === 'medkit') {
-      // 医疗包：治疗玩家
-      const hp = StateManager.get('player.hp') || 0;
-      const maxHp = StateManager.get('player.maxHp') || 100;
-      const heal = Math.min(30, maxHp - hp);
-      if (heal > 0) {
-        StateManager.set('player.hp', hp + heal);
-      }
-      this._refreshHUD();
-      return;
-    }
-
     const path = {
       food: 'globalResources.food',
       water: 'globalResources.water',
@@ -782,16 +701,6 @@ export default class GameScene extends BaseScene {
       const current = StateManager.get(path) || 0;
       StateManager.set(path, current + this._randomSupplyAmount(type));
       this._refreshHUD();
-    }
-
-    // 首次获得弹药 → 获得武器，通知玩家并允许后续生成丧尸
-    if (type === 'ammo' && !StateManager.get('player.hasWeapon')) {
-      StateManager.set('player.hasWeapon', true);
-      EventBus.emit(GameEvents.UI_NOTIFICATION, {
-        type: 'success',
-        message: '获得武器！丧尸开始出没…',
-      });
-      console.log('[GameScene] Player obtained first weapon — zombies will now spawn');
     }
   }
 
@@ -873,14 +782,6 @@ export default class GameScene extends BaseScene {
         this._entityRenderer.renderSurvivor(
           entityCtx, survivor,
           survivor.x, survivor.y
-        );
-      }
-
-      // 渲染拾取物
-      for (const loot of this._lootItems) {
-        this._entityRenderer.renderLootItem(
-          entityCtx, loot,
-          loot.x, loot.y
         );
       }
 

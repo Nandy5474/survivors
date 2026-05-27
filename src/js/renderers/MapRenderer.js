@@ -18,10 +18,10 @@ const ROOM_COLORS = {
 
 /** 地砖颜色 */
 const TILE_COLORS = {
-  [TileType.WALL]:    '#111118',
+  [TileType.WALL]:    '#2a2a40',
   [TileType.FLOOR]:   '#1c1c2a',
   [TileType.CORRIDOR]: '#1a1a28',
-  [TileType.DOOR]:    '#2a2a3a',
+  [TileType.DOOR]:    '#5a6a4a',
 };
 
 /** 迷雾颜色 */
@@ -101,6 +101,18 @@ export default class MapRenderer {
       // 物资图标
       if (room.hasSupplies) {
         this._drawSupplyIcon(ctx, rx + rw / 2, ry + rh / 2 - 10);
+      }
+    }
+
+    // 2.5) 绘制门标记
+    for (const room of mapData.rooms) {
+      if (!room.doors || room.doors.length === 0) continue;
+      if (!this._isRoomVisible(room, viewport)) continue;
+
+      for (const door of room.doors) {
+        const dx = door.gx * tw + tw / 2;
+        const dy = door.gy * th + th / 2;
+        this._drawDoorMarker(ctx, dx, dy, door.side);
       }
     }
 
@@ -214,6 +226,48 @@ export default class MapRenderer {
     ctx.lineTo(cx - 6, cy);
     ctx.closePath();
     ctx.fill();
+    ctx.restore();
+  }
+
+  /**
+   * 绘制门标记 — 半透明缺口 + 淡绿色门符号
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {number} cx - 门中心世界 X
+   * @param {number} cy - 门中心世界 Y
+   * @param {string} side - DoorSide
+   */
+  _drawDoorMarker(ctx, cx, cy, side) {
+    const tw = TILE_SIZE;
+    ctx.save();
+
+    // 门底色 — 淡绿色半透明
+    ctx.fillStyle = 'rgba(90, 160, 80, 0.5)';
+    ctx.fillRect(cx - tw / 2, cy - tw / 2, tw, tw);
+
+    // 门符号 — 根据朝向绘制小箭头
+    ctx.fillStyle = '#c0ffc0';
+    ctx.strokeStyle = '#6aaa6a';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+
+    const s = 6;
+    switch (side) {
+      case 'top':
+        ctx.moveTo(cx, cy - s); ctx.lineTo(cx - s, cy + s); ctx.lineTo(cx + s, cy + s); ctx.closePath();
+        break;
+      case 'bottom':
+        ctx.moveTo(cx, cy + s); ctx.lineTo(cx - s, cy - s); ctx.lineTo(cx + s, cy - s); ctx.closePath();
+        break;
+      case 'left':
+        ctx.moveTo(cx - s, cy); ctx.lineTo(cx + s, cy - s); ctx.lineTo(cx + s, cy + s); ctx.closePath();
+        break;
+      case 'right':
+        ctx.moveTo(cx + s, cy); ctx.lineTo(cx - s, cy - s); ctx.lineTo(cx - s, cy + s); ctx.closePath();
+        break;
+    }
+    ctx.fill();
+    ctx.stroke();
+
     ctx.restore();
   }
 }
