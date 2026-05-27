@@ -25,9 +25,9 @@ const TILE_COLORS = {
   [TileType.DOOR]:    '#5a6a4a',
 };
 
-/** 迷雾颜色 */
-const FOG_COLOR = 'rgba(0, 0, 0, 0.75)';
-const FOG_EDGE_COLOR = 'rgba(0, 0, 0, 0.35)';
+/** 迷雾颜色 — 未探索区域完全不可见 */
+const FOG_COLOR = 'rgba(0, 0, 0, 0.95)';
+const FOG_EDGE_COLOR = 'rgba(0, 0, 0, 0.55)';
 
 export default class MapRenderer {
   /**
@@ -143,29 +143,39 @@ export default class MapRenderer {
 
   /**
    * 渲染迷雾
+   * 修复：未探索房间完全涂黑，防止瓦片间漏光
    */
   _renderFog(ctx, viewport) {
     const { mapData } = this;
     const tw = TILE_SIZE;
     const th = TILE_SIZE;
 
-    // 简单方案：未探索的房间区域画迷雾
-    // 优化：只画视口内的未探索区域
+    // 优化：只处理视口内的区域
     const startCol = Math.max(0, Math.floor(viewport.x / tw));
     const endCol = Math.min(mapData.gridW, Math.ceil((viewport.x + viewport.w) / tw));
     const startRow = Math.max(0, Math.floor(viewport.y / th));
     const endRow = Math.min(mapData.gridH, Math.ceil((viewport.y + viewport.h) / th));
 
+    // ① 先涂黑整个未探索房间（防止瓦片间隙漏光）
     ctx.fillStyle = FOG_COLOR;
+    for (const room of mapData.rooms) {
+      if (room.explored) continue;
+      ctx.fillRect(
+        room.worldX - viewport.x,
+        room.worldY - viewport.y,
+        room.worldW,
+        room.worldH
+      );
+    }
 
+    // ② 再逐格涂黑走廊/散落可通行瓦片
     for (let y = startRow; y < endRow; y++) {
       for (let x = startCol; x < endCol; x++) {
         const room = mapData.getRoomAt(x, y);
         if (!room || !room.explored) {
-          // 检查该格是否为地板（墙壁不画迷雾，因为墙壁本身就是黑的）
           const tile = mapData.tiles[y]?.[x];
           if (tile !== TileType.WALL) {
-            ctx.fillRect(x * tw, y * th, tw, th);
+            ctx.fillRect(x * tw - viewport.x, y * th - viewport.y, tw, th);
           }
         }
       }

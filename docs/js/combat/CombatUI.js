@@ -56,17 +56,23 @@ export default class CombatUI {
 
   /**
    * 初始化战斗 UI 专用 Canvas 层
+   * 修复：getLayer() 接受数字索引，3 = fx 层
    */
   _initCanvas() {
-    // 复用 fx 层（或创建独立层）
-    this.canvas = this.game.getLayer('fx');
-    this.ctx = this.canvas.getContext('2d');
+    const layer = this.game.getLayer(3);  // 3 = fx 层
+    if (!layer || !layer.canvas) {
+      console.error('[CombatUI] fx 层未找到，战斗 UI 无法渲染');
+      return;
+    }
+    this.canvas = layer.canvas;
+    this.ctx = layer.ctx;
   }
 
   /**
    * 绑定鼠标/触摸事件（点击行动按钮）
    */
   _bindEvents() {
+    if (!this.canvas) return;
     this._onMouseMove = (e) => {
       const rect = this.canvas.getBoundingClientRect();
       const x = (e.clientX || e.touches?.[0]?.clientX || 0) - rect.left;
@@ -96,6 +102,7 @@ export default class CombatUI {
    */
   render(dt) {
     if (!this.combat.inCombat) return;
+    if (!this.ctx || !this.canvas) return;
 
     const ctx = this.ctx;
     const w = this.canvas.width;

@@ -200,7 +200,8 @@ export default class MapGenerator {
     for (const [rx, ry, rw, rh, type] of defs) {
       const room = new Room(rx, ry, rw, rh, type);
       for (let y = ry; y < ry + rh; y++) for (let x = rx; x < rx + rw; x++) { if (y >= 0 && y < GH && x >= 0 && x < GW) map.tiles[y][x] = TileType.FLOOR; }
-      if (type === RoomType.SUPPLY || type === RoomType.HOME) { room.hasSupplies = true; room.supplyType = 'food'; }
+      if (type === RoomType.HOME) { room.hasSupplies = true; room.supplyType = 'food'; }
+      if (type === RoomType.SUPPLY) { room.hasSupplies = true; room.supplyType = 'ammo'; }  // 序章便利店提供武器
       map.rooms.push(room); rooms.push(room);
     }
     const [home, neighbor, store, alley] = rooms;

@@ -80,6 +80,7 @@ export default class GameScene extends BaseScene {
     this._isMobile = MobileControls.isMobile();
     this._prologueDefeatedZombie = false;
     this._prologueLootedStore = false;
+    this._combatEndTimer = null;
     
     /** 全屏大地图 */
     this._fullMapRenderer = null;
@@ -155,6 +156,7 @@ export default class GameScene extends BaseScene {
   }
 
   onExit() {
+    if (this._combatEndTimer) { clearTimeout(this._combatEndTimer); this._combatEndTimer = null; }
     this._closeActivePanel();
     this._unbindPanelEvents();
     this._unbindKeyEvents();
@@ -404,9 +406,12 @@ export default class GameScene extends BaseScene {
     this._player.move(dx, dy, dt, this._mapData);
     const enteredRoom = this._player.checkRoomEntry(this._mapData);
     if (enteredRoom) this._onRoomEntered(enteredRoom);
+    const hasWeapon = StateManager.get('player.hasWeapon') === true;
+    const chapter = StateManager.get('story.chapter') || 0;
     for (const zombie of this._zombies) {
       zombie.update(dt, this._mapData, this._player);
-      if (zombie.isAlive && zombie.state === 'chase') {
+      // 无武器且非序章时，丧尸不触发战斗（仅巡逻/追击但不开战）
+      if (zombie.isAlive && zombie.state === 'chase' && (hasWeapon || chapter === 0)) {
         const dist = Math.sqrt((this._player.x - zombie.x) ** 2 + (this._player.y - zombie.y) ** 2);
         if (dist < COMBAT_TRIGGER_DIST && !this._combatManager.inCombat) this._startCombat(zombie);
       }
@@ -503,7 +508,11 @@ export default class GameScene extends BaseScene {
     this.mode = GameMode.COMBAT;
     zombie.state = 'idle';
     this._combatManager.startCombat(zombie, this._player, this._player.currentRoom);
-    EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'warning', message: `战斗开始！面对 ${zombie.isElite ? '精英丧尸' : '普通丧尸'}！` });
+    const isPrologue = StateManager.get('story.chapter') === 0 && StateManager.get('story.flags.prologueComplete') !== true;
+    const hint = isPrologue
+      ? '战斗开始！面对 普通丧尸（教学） · 按 1 攻击 / 2 防御 / 3 撤退 / 4 等待'
+      : `战斗开始！面对 ${zombie.isElite ? '精英丧尸' : '普通丧尸'}！`;
+    EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'warning', message: hint });
   }
 
   _updateCombat(dt) { if (!this._combatManager.inCombat) this._endCombatCheck(); }
@@ -578,7 +587,11 @@ export default class GameScene extends BaseScene {
     if (path) { StateManager.set(path, (StateManager.get(path) || 0) + this._randomSupplyAmount(type)); this._refreshHUD(); }
     if (type === 'ammo' && !StateManager.get('player.hasWeapon')) {
       StateManager.set('player.hasWeapon', true);
-      EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'success', message: '获得武器！丧尸开始出没…' });
+      const chapter = StateManager.get('story.chapter') || 0;
+      const msg = chapter === 0
+        ? '获得武器：生锈的匕首！按 1 攻击丧尸。'
+        : '获得武器！丧尸开始出没…';
+      EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'success', message: msg });
     }
   }
 
@@ -703,6 +716,7 @@ export default class GameScene extends BaseScene {
   }
 
   _onCombatEnd(result) {
+    if (this._combatEndTimer) { clearTimeout(this._combatEndTimer); this._combatEndTimer = null; }
     if (result.victory) {
       EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'success', message: `战斗胜利！获得 ${result.loot.length} 件物资` });
       this._prologueDefeatedZombie = true;
@@ -711,7 +725,10 @@ export default class GameScene extends BaseScene {
     } else {
       EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'error', message: '战斗失败...' });
     }
-    setTimeout(() => { this._endCombatCheck(); }, 1500);
+    this._combatEndTimer = setTimeout(() => {
+      this._combatEndTimer = null;
+      this._endCombatCheck();
+    }, 1500);
   }
 
   // ---- Task 3: 序章禁用基地按钮 ----
