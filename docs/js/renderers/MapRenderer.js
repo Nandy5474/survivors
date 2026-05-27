@@ -71,9 +71,10 @@ export default class MapRenderer {
       }
     }
 
-    // 2) 绘制房间高亮
+    // 2) 绘制房间高亮（仅已探索的房间）
     for (const room of mapData.rooms) {
-      // 跳过不可见的房间
+      // 未探索的房间不绘制任何房间标识（战争迷雾覆盖）
+      if (!room.explored) continue;
       if (!this._isRoomVisible(room, viewport)) continue;
 
       const color = ROOM_COLORS[room.type] || ROOM_COLORS[RoomType.EMPTY];
@@ -105,8 +106,9 @@ export default class MapRenderer {
       }
     }
 
-    // 2.5) 绘制门标记
+    // 2.5) 绘制门标记（仅已探索的房间）
     for (const room of mapData.rooms) {
+      if (!room.explored) continue;
       if (!room.doors || room.doors.length === 0) continue;
       if (!this._isRoomVisible(room, viewport)) continue;
 

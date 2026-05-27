@@ -631,8 +631,8 @@ export default class MapGenerator {
       map.tiles[corr1Y][x] = TileType.CORRIDOR;
     }
 
-    // 3) 邻居家 (4x4)，右侧
-    const neighborRoom = new Room(11, 2, 4, 4, RoomType.EMPTY);
+    // 3) 邻居家 (4x4)，右侧 — 序章新手战斗教学，有 1 只弱化丧尸
+    const neighborRoom = new Room(11, 2, 4, 4, RoomType.ZOMBIE);
     this._carveRoomFloor(map, neighborRoom);
     map.rooms.push(neighborRoom);
 
