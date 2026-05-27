@@ -1,8 +1,8 @@
 /**
  * GameScene — 主游戏场景
  * 集成地图生成、玩家控制、实体管理、渲染系统
- * v0.4.0：集成 AP 回合制战斗系统
- * @version 0.4.0
+ * v0.5.0：修复探索重入/暂停恢复/地图名生成
+ * @version 0.5.0
  */
 
 import BaseScene from './BaseScene.js';
@@ -26,6 +26,11 @@ import CombatUI from '../combat/CombatUI.js';
 // 移动端控制
 import MobileControls from '../ui/MobileControls.js';
 
+// 系统
+import InventorySystem from '../systems/InventorySystem.js';
+import BaseSystem, { BuildingType, SurvivorJob, BUILDING_DEFS, SURVIVOR_JOB_LABELS } from '../systems/BaseSystem.js';
+import { ITEM_DEFS, ItemCategory, ITEM_CATEGORY_ICONS } from '../systems/InventorySystem.js';
+
 /** 游戏模式枚举 */
 export const GameMode = Object.freeze({
   EXPLORATION: 'exploration',
@@ -45,6 +50,16 @@ const SURVIVOR_DIALOGUES = [
   ['我是一名医生，如果你需要治疗，我可以帮忙。'],
   ['我在这片区域搜索物资，没想到遇到了你。', '这附近还有一个废弃的仓库，可能有我们需要的东西。'],
   ['谢谢你发现了我。我有些物资可以分享。'],
+];
+
+/** 地图名称词库（末世风格随机组合） */
+const MAP_NAME_PREFIXES = [
+  '废弃', '阴暗', '残破', '荒芜', '死亡', '腐烂', '寂静', '血色',
+  '暗巷', '破碎', '荒废', '幸存者', '瘟疫', '辐射', '地下', '末日',
+];
+const MAP_NAME_SUFFIXES = [
+  '仓库', '街区', '医院', '学校', '工厂', '车站', '隧道', '超市',
+  '公寓', '教堂', '避难所', '下水道', '停车场', '办公楼', '实验室', '码头',
 ];
 
 /** 触发战斗的索敌距离（像素） */
@@ -115,6 +130,21 @@ export default class GameScene extends BaseScene {
     /** @type {object} 子模块引用 */
     this.systems = {};
 
+    /** @type {InventorySystem} 背包系统 */
+    this._inventory = new InventorySystem(30);
+
+    /** @type {BaseSystem} 基地系统 */
+    this._baseSystem = null;
+
+    /** @type {string|null} 当前打开的面板 */
+    this._activePanel = null;
+
+    /** @type {string} 背包当前分类筛选 */
+    this._invFilter = 'all';
+
+    /** @type {number} 上次每日结算的天数 */
+    this._lastTickDay = 0;
+
     // 事件监听取消函数列表
     this._unsubscribers = [];
 
@@ -123,6 +153,10 @@ export default class GameScene extends BaseScene {
     this._pauseHandlers = new Map();
     /** @type {Map<string, Function>} */
     this._hudHandlers = new Map();
+
+    // 面板事件 handler 映射
+    /** @type {Map<string, Function>} */
+    this._panelHandlers = new Map();
 
     // --- 移动端控制 ---
     /** @type {MobileControls|null} */
@@ -146,6 +180,17 @@ export default class GameScene extends BaseScene {
 
     // 绑定底部按钮事件
     this._bindHudButtons();
+
+    // 绑定面板事件
+    this._bindPanelEvents();
+
+    // 初始化基地系统
+    this._baseSystem = new BaseSystem();
+    this._baseSystem.onChanged(() => this._renderBasePanel());
+    this._inventory.onChanged(() => this._renderInventoryPanel());
+
+    // 初始每日结算标记
+    this._lastTickDay = StateManager.get('gameTime.day') || 1;
 
     // 订阅全局事件
     this._subscribeEvents();
@@ -209,6 +254,7 @@ export default class GameScene extends BaseScene {
   }
 
   onPause() {
+    this.state = 'paused';
     this._isPaused = true;
     if (this._pauseOverlay) {
       this._pauseOverlay.classList.remove('hidden');
@@ -216,13 +262,20 @@ export default class GameScene extends BaseScene {
   }
 
   onResume() {
+    this.state = 'active';
     this._isPaused = false;
     if (this._pauseOverlay) {
       this._pauseOverlay.classList.add('hidden');
     }
+    // 恢复后重新绑定键盘（可能在 pause 间被解绑）
+    if (this.mode === GameMode.EXPLORATION && !this._onKeyDown) {
+      this._bindKeyEvents();
+    }
   }
 
   onExit() {
+    this._closeActivePanel();
+    this._unbindPanelEvents();
     this._unbindKeyEvents();
     this._unbindPauseEvents();
     this._unbindHudButtons();
@@ -256,12 +309,53 @@ export default class GameScene extends BaseScene {
     const prevMode = this.mode;
     this.mode = mode;
 
-    // 首次进入探索模式时初始化
-    if (mode === GameMode.EXPLORATION && !this._explorationReady) {
+    // 离开探索模式时清理
+    if (prevMode === GameMode.EXPLORATION && mode !== GameMode.EXPLORATION) {
+      this._cleanupExploration();
+    }
+
+    // 进入探索模式：每次都以全新状态初始化
+    if (mode === GameMode.EXPLORATION) {
       this._initExploration();
+      this._setHudVisible('hud-map-name', true);
+    } else {
+      this._setHudVisible('hud-map-name', false);
     }
 
     EventBus.emit(GameEvents.SCENE_CHANGE, { scene: `game:${mode}`, data: { prevMode } });
+  }
+
+  /**
+   * 清理探索模式资源
+   */
+  _cleanupExploration() {
+    this._unbindKeyEvents();
+    this._mapData = null;
+    this._player = null;
+    this._zombies = [];
+    this._survivors = [];
+    this._lootItems = [];
+    this._mapRenderer = null;
+    this._entityRenderer = null;
+    this._lastRoom = null;
+    this._explorationReady = false;
+
+    // 结束未完成的战斗
+    if (this._combatManager && this._combatManager.inCombat) {
+      this._combatManager._endCombat();
+    }
+    this._combatTargetZombie = null;
+
+    // 隐藏移动端交互按钮
+    if (this._mobileControls) {
+      this._mobileControls.setInteractButtonVisible(false);
+    }
+
+    this.clearLayer(1);
+    this.clearLayer(2);
+    this.clearLayer(3);
+
+    console.log('[GameScene] Exploration cleaned up');
   }
 
   // ========== 探索系统初始化 ==========
@@ -269,7 +363,12 @@ export default class GameScene extends BaseScene {
   _initExploration() {
     const seed = generateSeed();
     const hasWeapon = StateManager.get('player.hasWeapon') === true;
-    console.log('[GameScene] Generating map with seed:', seed, '| hasWeapon:', hasWeapon);
+
+    // 生成地图名
+    const mapName = this._generateMapName(seed);
+    this._setHudText('hud-map-name', mapName);
+
+    console.log('[GameScene] Generating map:', mapName, '| seed:', seed, '| hasWeapon:', hasWeapon);
 
     // 生成地图（传入 hasWeapon 状态）
     const generator = new MapGenerator(seed, 40, 30, { hasWeapon });
@@ -447,13 +546,38 @@ export default class GameScene extends BaseScene {
     };
     const label = labels[loot.type] || loot.type;
 
-    EventBus.emit(GameEvents.UI_NOTIFICATION, {
-      type: 'success',
-      message: `拾取了 ${label} x${loot.amount}`,
-    });
-
-    // 将物资应用到全局状态
-    this._applySupplyToState(loot.type);
+    // 将拾取物映射到背包物品
+    const itemMap = {
+      ammo: 'bullets_9mm',
+      medkit: 'bandage',
+      parts: 'mechanical_parts',
+      food: 'canned_food',
+    };
+    const itemId = itemMap[loot.type];
+    if (itemId) {
+      const result = this._inventory.addItem(itemId, loot.amount);
+      if (result.success) {
+        EventBus.emit(GameEvents.UI_NOTIFICATION, {
+          type: 'success',
+          message: `拾取了 ${label} x${result.added}${result.overflow > 0 ? '（背包已满，部分丢弃）' : ''}`,
+        });
+        // 同步更新全局资源
+        this._applySupplyToState(loot.type);
+        if (this._activePanel === 'inventory') this._renderInventoryPanel();
+      } else {
+        EventBus.emit(GameEvents.UI_NOTIFICATION, {
+          type: 'warning',
+          message: `背包已满，无法拾取 ${label}`,
+        });
+      }
+    } else {
+      // 无法映射到背包物品的资源直接应用到全局状态
+      this._applySupplyToState(loot.type);
+      EventBus.emit(GameEvents.UI_NOTIFICATION, {
+        type: 'success',
+        message: `拾取了 ${label} x${loot.amount}`,
+      });
+    }
 
     // 移除已收集的拾取物
     this._lootItems = this._lootItems.filter(item => !item.collected);
@@ -802,6 +926,18 @@ export default class GameScene extends BaseScene {
   }
 
   /**
+   * 基于种子生成末世风格地图名
+   * @param {number} seed
+   * @returns {string}
+   */
+  _generateMapName(seed) {
+    // 用种子确定性选词
+    const prefixIdx = seed % MAP_NAME_PREFIXES.length;
+    const suffixIdx = Math.floor(seed / 7) % MAP_NAME_SUFFIXES.length;
+    return MAP_NAME_PREFIXES[prefixIdx] + MAP_NAME_SUFFIXES[suffixIdx];
+  }
+
+  /**
    * 查找最近的幸存者
    * @param {number} maxDist
    * @returns {Survivor|null}
@@ -981,6 +1117,11 @@ export default class GameScene extends BaseScene {
     if (el) el.textContent = text;
   }
 
+  _setHudVisible(id, visible) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = visible ? '' : 'none';
+  }
+
   // ---- 私有：事件绑定 ----
 
   _subscribeEvents() {
@@ -1082,16 +1223,19 @@ export default class GameScene extends BaseScene {
       }
     };
 
-    bind('btn-explore',   () => this.setMode(GameMode.EXPLORATION));
-    bind('btn-base',      () => {
-      this.setMode(GameMode.BASE);
-      this._unbindKeyEvents();
-      this.clearLayer(1);
-      this.clearLayer(2);
-      this.clearLayer(3);
-      this._drawBaseBackground();
+    bind('btn-explore',   () => {
+      this._closeActivePanel();
+      this.setMode(GameMode.EXPLORATION);
     });
-    bind('btn-inventory', () => EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'info', message: '背包功能将在后续版本中开放' }));
+    bind('btn-base',      () => {
+      this._closeActivePanel();
+      this.setMode(GameMode.BASE);
+      this._drawBaseBackground();
+      this._openBasePanel();
+    });
+    bind('btn-inventory', () => {
+      this._openInventoryPanel();
+    });
     bind('btn-mercenary', () => EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'info', message: '佣兵系统将在后续版本中开放' }));
     bind('btn-survivors',() => EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'info', message: '幸存者管理将在后续版本中开放' }));
     bind('btn-menu',      () => this.game.pause());
@@ -1131,6 +1275,36 @@ export default class GameScene extends BaseScene {
       day += days;
     }
 
+    if (day !== this._lastTickDay && this._baseSystem) {
+      this._lastTickDay = day;
+
+      // 检查建设项目完成
+      const completed = this._baseSystem.checkBuildCompletion(day);
+      for (const c of completed) {
+        const def = BUILDING_DEFS[c.buildingId];
+        const name = def ? def.name : c.buildingId;
+        EventBus.emit(GameEvents.UI_NOTIFICATION, {
+          type: 'success',
+          message: `${name} 建设完成！等级 ${c.level}`,
+        });
+      }
+
+      // 每日资源结算
+      this._baseSystem.dailyTick(StateManager);
+
+      // 丧尸攻击检测
+      const attacked = this._baseSystem.maybeTriggerZombieAttack(day);
+      if (attacked) {
+        const result = this._baseSystem.processZombieAttack();
+        EventBus.emit(GameEvents.UI_NOTIFICATION, {
+          type: 'danger',
+          message: result.message,
+        });
+      }
+
+      this._refreshHUD();
+    }
+
     StateManager.batch([
       { path: 'gameTime.minute', value: Math.floor(minute) },
       { path: 'gameTime.hour', value: hour },
@@ -1140,6 +1314,396 @@ export default class GameScene extends BaseScene {
     if (Math.floor(minute) % 10 === 0) {
       this._refreshHUD();
     }
+  }
+
+  // ---- 面板系统：通用 ----
+
+  /** 关闭当前活跃面板 */
+  _closeActivePanel() {
+    if (this._activePanel === 'inventory') this._closeInventoryPanel();
+    if (this._activePanel === 'base') this._closeBasePanel();
+  }
+
+  /** 打开任意面板时暂停游戏输入 */
+  _openPanel(panelId) {
+    this._closeActivePanel();
+    this._activePanel = panelId;
+    const el = document.getElementById(`${panelId}-panel`);
+    if (el) el.classList.remove('hidden');
+  }
+
+  _closePanel(panelId) {
+    if (this._activePanel !== panelId) return;
+    this._activePanel = null;
+    const el = document.getElementById(`${panelId}-panel`);
+    if (el) el.classList.add('hidden');
+  }
+
+  // ---- 面板系统：背包 ----
+
+  _openInventoryPanel() {
+    this._invFilter = 'all';
+    this._openPanel('inventory');
+    this._renderInventoryPanel();
+  }
+
+  _closeInventoryPanel() {
+    this._closePanel('inventory');
+  }
+
+  /** @param {string} [category='all'] */
+  _renderInventoryPanel(category) {
+    category = category || this._invFilter;
+    this._invFilter = category;
+
+    // 更新槽位信息
+    const infoEl = document.getElementById('inv-slot-info');
+    if (infoEl) infoEl.textContent = `${this._inventory.slotCount} / ${this._inventory.capacity}`;
+
+    // 更新分类标签
+    const tabs = document.querySelectorAll('#inv-tabs .tab-btn');
+    tabs.forEach(t => {
+      t.classList.toggle('tab-active', t.dataset.cat === category);
+    });
+
+    // 获取物品
+    let items;
+    if (category === 'all') {
+      items = this._inventory.getAllItems();
+    } else {
+      items = this._inventory.getItemsByCategory(category);
+    }
+
+    const listEl = document.getElementById('inv-item-list');
+    const emptyEl = document.getElementById('inv-empty');
+    if (!listEl) return;
+
+    listEl.innerHTML = '';
+
+    if (items.length === 0) {
+      if (emptyEl) emptyEl.style.display = '';
+      return;
+    }
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    for (const item of items) {
+      if (!item.def) continue;
+
+      const card = document.createElement('div');
+      card.className = 'inv-item';
+
+      const isStackable = item.def.stackable;
+      const canUse = item.def.category === ItemCategory.MEDICAL
+                  || item.def.category === ItemCategory.FOOD;
+
+      card.innerHTML = `
+        <div class="inv-item-icon">${item.def.icon}</div>
+        <div class="inv-item-info">
+          <div class="inv-item-name">${item.def.name}</div>
+          <div class="inv-item-desc">${item.def.desc}</div>
+        </div>
+        ${isStackable ? `<div class="inv-item-qty">x${item.quantity}</div>` : ''}
+        <div class="inv-item-actions">
+          ${canUse ? `<button class="inv-use-btn" data-action="use" data-id="${item.itemId}">使用</button>` : ''}
+          <button class="inv-drop-btn" data-action="drop" data-id="${item.itemId}">丢弃</button>
+        </div>
+      `;
+
+      // 绑定事件
+      card.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const action = btn.dataset.action;
+          const id = btn.dataset.id;
+          if (action === 'use') this._onUseItem(id);
+          if (action === 'drop') this._onDropItem(id);
+        });
+      });
+
+      listEl.appendChild(card);
+    }
+  }
+
+  /** @param {string} itemId */
+  _onUseItem(itemId) {
+    const def = ITEM_DEFS[itemId];
+    if (!def) return;
+
+    const removed = this._inventory.removeItem(itemId, 1);
+    if (!removed.success) return;
+
+    let effectMsg = '';
+    switch (def.category) {
+      case ItemCategory.MEDICAL: {
+        if (itemId === 'bandage') {
+          const hp = StateManager.get('player.hp') || 0;
+          const maxHp = StateManager.get('player.maxHp') || 100;
+          StateManager.set('player.hp', Math.min(hp + 20, maxHp));
+          effectMsg = '恢复了 20 生命值';
+        } else if (itemId === 'first_aid_kit') {
+          const hp = StateManager.get('player.hp') || 0;
+          const maxHp = StateManager.get('player.maxHp') || 100;
+          StateManager.set('player.hp', Math.min(hp + 50, maxHp));
+          effectMsg = '恢复了 50 生命值';
+        } else if (itemId === 'antidote') {
+          effectMsg = '解除了中毒状态';
+        }
+        break;
+      }
+      case ItemCategory.FOOD: {
+        const sanity = StateManager.get('player.sanity') || 0;
+        const maxSanity = StateManager.get('player.maxSanity') || 100;
+        const restore = itemId === 'mre' ? 20 : (itemId === 'canned_food' ? 10 : 5);
+        StateManager.set('player.sanity', Math.min(sanity + restore, maxSanity));
+        effectMsg = `恢复了 ${restore} 精力`;
+        break;
+      }
+      default:
+        effectMsg = `使用了 ${def.name}`;
+    }
+
+    EventBus.emit(GameEvents.UI_NOTIFICATION, {
+      type: 'success',
+      message: `使用了 ${def.name}：${effectMsg}`,
+    });
+    EventBus.emit(GameEvents.ITEM_USED, { itemId, def });
+
+    this._refreshHUD();
+  }
+
+  /** @param {string} itemId */
+  _onDropItem(itemId) {
+    const def = ITEM_DEFS[itemId];
+    if (!def) return;
+
+    const removed = this._inventory.removeItem(itemId, 1);
+    if (removed.success) {
+      EventBus.emit(GameEvents.UI_NOTIFICATION, {
+        type: 'info',
+        message: `丢弃了 ${def.name} x1`,
+      });
+    }
+  }
+
+  // ---- 面板系统：基地 ----
+
+  _openBasePanel() {
+    this._openPanel('base');
+    this._renderBasePanel();
+  }
+
+  _closeBasePanel() {
+    this._closePanel('base');
+  }
+
+  _renderBasePanel() {
+    if (!this._baseSystem) return;
+    const bs = this._baseSystem;
+
+    // 状态栏
+    this._setHudText('base-level', bs.level);
+    this._setHudText('base-hp', bs.hp);
+    this._setHudText('base-maxhp', bs.maxHp);
+    this._setHudText('base-defense', bs.defense);
+
+    // 资源
+    const r = StateManager.getState().globalResources;
+    this._setHudText('base-res-food', r.food);
+    this._setHudText('base-res-water', r.water);
+    this._setHudText('base-res-wood', r.materials.wood);
+    this._setHudText('base-res-stone', r.materials.stone);
+    this._setHudText('base-res-metal', r.materials.metal);
+    this._setHudText('base-res-parts', r.parts);
+
+    // 槽位
+    this._setHudText('base-build-slots', `建筑槽位: ${bs.usedBuildSlots} / ${bs.buildSlots}`);
+    this._setHudText('base-survivor-slots', `人口: ${bs.survivors.length} / ${bs.maxSurvivors}`);
+
+    // 设施列表
+    this._renderBuildingList();
+
+    // 幸存者列表
+    this._renderSurvivorList();
+  }
+
+  _renderBuildingList() {
+    const listEl = document.getElementById('base-buildings-list');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+
+    // 已建造的设施
+    for (const b of this._baseSystem.buildings) {
+      const def = BUILDING_DEFS[b.id];
+      if (!def) continue;
+      const canUpgrade = b.level < def.maxLevel;
+      const nextCost = canUpgrade ? def.buildCost(b.level + 1) : null;
+
+      const card = document.createElement('div');
+      card.className = 'building-card';
+      card.innerHTML = `
+        <div class="building-icon">${def.icon}</div>
+        <div class="building-info">
+          <div class="building-name">${def.name}</div>
+          <div class="building-level">等级 ${b.level}/${def.maxLevel}</div>
+          <div class="building-desc">${def.effects(b.level).desc}</div>
+        </div>
+        ${canUpgrade
+          ? `<button class="building-upgrade-btn" data-building="${b.id}">升级<br>木${nextCost.wood} 石${nextCost.stone} 铁${nextCost.metal}</button>`
+          : ''}
+      `;
+
+      const btn = card.querySelector('.building-upgrade-btn');
+      if (btn) {
+        btn.addEventListener('click', () => this._onUpgradeBuilding(b.id));
+      }
+      listEl.appendChild(card);
+    }
+
+    // 建设中
+    for (const proj of this._baseSystem._constructionQueue) {
+      const def = BUILDING_DEFS[proj.buildingId];
+      if (!def) continue;
+      const card = document.createElement('div');
+      card.className = 'building-card';
+      card.style.opacity = '0.55';
+      card.innerHTML = `
+        <div class="building-icon">${def.icon}</div>
+        <div class="building-info">
+          <div class="building-name">${def.name}</div>
+          <div class="building-level">建设中 等级 ${proj.level} · 第 ${proj.finishDay} 天完成</div>
+          <div class="building-desc">${def.effects(proj.level).desc}</div>
+        </div>
+      `;
+      listEl.appendChild(card);
+    }
+  }
+
+  _renderSurvivorList() {
+    const listEl = document.getElementById('base-survivors-list');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+
+    for (let i = 0; i < this._baseSystem.survivors.length; i++) {
+      const s = this._baseSystem.survivors[i];
+
+      const card = document.createElement('div');
+      card.className = 'survivor-card';
+
+      const options = Object.entries(SURVIVOR_JOB_LABELS)
+        .map(([val, label]) => `<option value="${val}" ${s.job === val ? 'selected' : ''}>${label}</option>`)
+        .join('');
+
+      card.innerHTML = `
+        <div class="survivor-name">${s.name}</div>
+        <select class="survivor-job-select" data-index="${i}">
+          ${options}
+        </select>
+      `;
+
+      card.querySelector('select').addEventListener('change', (e) => {
+        this._onAssignSurvivorJob(i, e.target.value);
+      });
+
+      listEl.appendChild(card);
+    }
+  }
+
+  /** @param {string} buildingId */
+  _onUpgradeBuilding(buildingId) {
+    if (!this._baseSystem) return;
+    const r = StateManager.getState().globalResources;
+    const resources = { wood: r.materials.wood, stone: r.materials.stone, metal: r.materials.metal };
+    const currentDay = StateManager.get('gameTime.day') || 1;
+
+    const result = this._baseSystem.startBuild(buildingId, resources, currentDay);
+    if (result.success) {
+      // 扣除资源
+      StateManager.set('globalResources.materials.wood', resources.wood - result.cost.wood);
+      StateManager.set('globalResources.materials.stone', resources.stone - result.cost.stone);
+      StateManager.set('globalResources.materials.metal', resources.metal - result.cost.metal);
+
+      const def = BUILDING_DEFS[buildingId];
+      EventBus.emit(GameEvents.UI_NOTIFICATION, {
+        type: 'success',
+        message: `${def.name} 开始升级！第 ${result.finishDay} 天完成`,
+      });
+      this._refreshHUD();
+    } else {
+      EventBus.emit(GameEvents.UI_NOTIFICATION, {
+        type: 'warning',
+        message: result.reason,
+      });
+    }
+  }
+
+  /** @param {number} index @param {string} job */
+  _onAssignSurvivorJob(index, job) {
+    if (!this._baseSystem) return;
+    this._baseSystem.assignJob(index, job);
+    this._renderBasePanel();
+    EventBus.emit(GameEvents.UI_NOTIFICATION, {
+      type: 'info',
+      message: `${this._baseSystem.survivors[index].name} 已分配为 ${SURVIVOR_JOB_LABELS[job]}`,
+    });
+  }
+
+  // ---- 面板事件绑定 ----
+
+  _bindPanelEvents() {
+    // 背包关闭按钮
+    const invClose = document.getElementById('inv-close');
+    if (invClose) {
+      const h = () => this._closeInventoryPanel();
+      invClose.addEventListener('click', h);
+      this._panelHandlers.set('inv-close', h);
+    }
+
+    // 背包分类标签
+    const invTabs = document.getElementById('inv-tabs');
+    if (invTabs) {
+      const h = (e) => {
+        const cat = e.target.dataset.cat;
+        if (cat) this._renderInventoryPanel(cat);
+      };
+      invTabs.addEventListener('click', h);
+      this._panelHandlers.set('inv-tabs', h);
+    }
+
+    // 基地关闭按钮
+    const baseClose = document.getElementById('base-close');
+    if (baseClose) {
+      const h = () => this._closeBasePanel();
+      baseClose.addEventListener('click', h);
+      this._panelHandlers.set('base-close', h);
+    }
+
+    // 面板遮罩点击关闭
+    const closeOnOverlay = (e) => {
+      if (e.target === e.currentTarget) {
+        this._closeActivePanel();
+      }
+    };
+    const invOverlay = document.getElementById('inventory-panel');
+    const baseOverlay = document.getElementById('base-panel');
+    if (invOverlay) {
+      invOverlay.addEventListener('click', closeOnOverlay);
+      this._panelHandlers.set('inv-overlay', closeOnOverlay);
+    }
+    if (baseOverlay) {
+      baseOverlay.addEventListener('click', closeOnOverlay);
+      this._panelHandlers.set('base-overlay', closeOnOverlay);
+    }
+  }
+
+  _unbindPanelEvents() {
+    for (const [id, handler] of this._panelHandlers.entries()) {
+      if (id === 'inv-close') document.getElementById('inv-close')?.removeEventListener('click', handler);
+      if (id === 'inv-tabs') document.getElementById('inv-tabs')?.removeEventListener('click', handler);
+      if (id === 'base-close') document.getElementById('base-close')?.removeEventListener('click', handler);
+      if (id === 'inv-overlay') document.getElementById('inventory-panel')?.removeEventListener('click', handler);
+      if (id === 'base-overlay') document.getElementById('base-panel')?.removeEventListener('click', handler);
+    }
+    this._panelHandlers.clear();
   }
 
   // ---- 私有：通知 ----

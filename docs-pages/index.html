@@ -44,6 +44,7 @@
   <div id="ui-layer">
     <!-- 顶部 HUD -->
     <div id="hud-top">
+      <div id="hud-map-name">废土某处</div>
       <div id="hud-resources" class="hud-panel">
         <span class="hud-item" id="hud-gold">💰 0</span>
         <span class="hud-item" id="hud-diamond">💎 0</span>
@@ -109,6 +110,73 @@
         <button class="menu-btn" id="pause-resume">继续</button>
         <button class="menu-btn" id="pause-save">保存</button>
         <button class="menu-btn" id="pause-quit">退出</button>
+      </div>
+    </div>
+
+    <!-- 背包面板 -->
+    <div id="inventory-panel" class="panel-overlay hidden">
+      <div class="panel-container">
+        <div class="panel-header">
+          <h2>🎒 背包</h2>
+          <div class="panel-header-right">
+            <span id="inv-slot-info" class="panel-info">0 / 30</span>
+            <button class="panel-close-btn" id="inv-close">✕</button>
+          </div>
+        </div>
+        <!-- 分类标签 -->
+        <div id="inv-tabs" class="panel-tabs">
+          <button class="tab-btn tab-active" data-cat="all">全部</button>
+          <button class="tab-btn" data-cat="weapon">武器</button>
+          <button class="tab-btn" data-cat="ammo">弹药</button>
+          <button class="tab-btn" data-cat="medical">医疗</button>
+          <button class="tab-btn" data-cat="food">食物</button>
+          <button class="tab-btn" data-cat="materials">建材</button>
+          <button class="tab-btn" data-cat="parts">零件</button>
+        </div>
+        <!-- 物品列表 -->
+        <div id="inv-item-list" class="item-list"></div>
+        <!-- 空提示 -->
+        <div id="inv-empty" class="panel-empty">背包空空如也</div>
+      </div>
+    </div>
+
+    <!-- 基地面板 -->
+    <div id="base-panel" class="panel-overlay hidden">
+      <div class="panel-container">
+        <div class="panel-header">
+          <h2>🏠 基地</h2>
+          <button class="panel-close-btn" id="base-close">✕</button>
+        </div>
+        <!-- 基地状态栏 -->
+        <div id="base-status" class="base-status-bar">
+          <div class="base-stat">等级: <span id="base-level">1</span></div>
+          <div class="base-stat">HP: <span id="base-hp">100</span> / <span id="base-maxhp">100</span></div>
+          <div class="base-stat">防御: <span id="base-defense">0</span></div>
+        </div>
+        <!-- 资源库存 -->
+        <div class="base-section">
+          <h3>资源库存</h3>
+          <div class="base-res-grid" id="base-res-grid">
+            <div class="base-res-item">🍖 食物: <span id="base-res-food">0</span></div>
+            <div class="base-res-item">💧 水: <span id="base-res-water">0</span></div>
+            <div class="base-res-item">🪵 木材: <span id="base-res-wood">0</span></div>
+            <div class="base-res-item">🪨 石材: <span id="base-res-stone">0</span></div>
+            <div class="base-res-item">🔩 金属: <span id="base-res-metal">0</span></div>
+            <div class="base-res-item">⚙️ 零件: <span id="base-res-parts">0</span></div>
+          </div>
+        </div>
+        <!-- 设施 -->
+        <div class="base-section">
+          <h3>设施</h3>
+          <div id="base-buildings-list" class="building-list"></div>
+          <span id="base-build-slots" class="panel-info">建筑槽位: 0 / 2</span>
+        </div>
+        <!-- 幸存者 -->
+        <div class="base-section">
+          <h3>幸存者</h3>
+          <div id="base-survivors-list" class="survivor-list"></div>
+          <span id="base-survivor-slots" class="panel-info">人口: 0 / 3</span>
+        </div>
       </div>
     </div>
   </div>
