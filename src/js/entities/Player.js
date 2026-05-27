@@ -57,25 +57,27 @@ export default class Player {
     const ny = dy / len;
 
     const step = this.speed * dt;
-    let newX = this.x + nx * step;
-    let newY = this.y + ny * step;
-
-    // 碰撞检测：分别检查 X 和 Y 方向（允许沿墙滑动）
-    const canMoveX = this._checkCollision(newX, this.y, mapData);
-    const canMoveY = this._checkCollision(this.x, newY, mapData);
-    // 对角线方向检查
-    const canMoveDiag = this._checkCollision(newX, newY, mapData);
+    const newX = this.x + nx * step;
+    const newY = this.y + ny * step;
 
     let moved = false;
 
-    if (canMoveX && canMoveDiag) {
+    // 尝试同时移动 X 和 Y（对角线）
+    if (this._checkCollision(newX, newY, mapData)) {
       this.x = newX;
-      moved = true;
-    }
-
-    if (canMoveY && canMoveDiag) {
       this.y = newY;
       moved = true;
+    } else {
+      // 尝试只移动 X
+      if (this._checkCollision(newX, this.y, mapData)) {
+        this.x = newX;
+        moved = true;
+      }
+      // 尝试只移动 Y
+      if (this._checkCollision(this.x, newY, mapData)) {
+        this.y = newY;
+        moved = true;
+      }
     }
 
     // 更新朝向

@@ -8,6 +8,7 @@ import { RoomType, TileType, TILE_SIZE } from '../game/MapGenerator.js';
 
 /** 房间类型颜色映射 */
 const ROOM_COLORS = {
+  [RoomType.HOME]:     { fill: '#2a2a1a', border: '#5a5a3a', label: '家' },
   [RoomType.SMALL_BOX]: { fill: '#3d2b1f', border: '#5a3e2b', label: '储物间' },
   [RoomType.LARGE_BOX]: { fill: '#2e1f14', border: '#4a2e1a', label: '大型储物间' },
   [RoomType.EMPTY]:     { fill: '#1e1e2e', border: '#333350', label: '空房间' },

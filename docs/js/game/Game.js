@@ -170,6 +170,10 @@ export default class Game {
     this.accumulator = 0;
     StateManager.set('meta.isPaused', false);
     EventBus.emit(GameEvents.GAME_RESUME);
+    // 调用当前场景的 onResume 方法（隐藏暂停遮罩等）
+    if (this._currentScene) {
+      this._currentScene.onResume();
+    }
     requestAnimationFrame(this._loop);
   }
 

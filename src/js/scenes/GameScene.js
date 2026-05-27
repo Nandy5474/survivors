@@ -317,7 +317,6 @@ export default class GameScene extends BaseScene {
     // 进入探索模式：每次都以全新状态初始化
     if (mode === GameMode.EXPLORATION) {
       this._initExploration();
-      this._setHudVisible('hud-map-name', true);
     } else {
       this._setHudVisible('hud-map-name', false);
     }
@@ -329,6 +328,25 @@ export default class GameScene extends BaseScene {
    * 清理探索模式资源
    */
   _cleanupExploration() {
+    // 序章完成检测：返回基地时标记完成
+    const chapter = StateManager.get('story.chapter') || 0;
+    const prologueComplete = StateManager.get('story.flags.prologueComplete') === true;
+    if (chapter === 0 && !prologueComplete) {
+      // 序章完成：至少探索了 2 个房间（家 + 至少一个其他房间）
+      const exploredCount = this._mapData
+        ? this._mapData.rooms.filter(r => r.explored).length
+        : 0;
+      if (exploredCount >= 2) {
+        StateManager.set('story.flags.prologueComplete', true);
+        StateManager.set('story.chapter', 1);
+        EventBus.emit(GameEvents.UI_NOTIFICATION, {
+          type: 'success',
+          message: '序章完成！解锁新区域…',
+        });
+        console.log('[GameScene] Prologue completed, chapter → 1');
+      }
+    }
+
     this._unbindKeyEvents();
     this._mapData = null;
     this._player = null;
@@ -361,31 +379,69 @@ export default class GameScene extends BaseScene {
   // ========== 探索系统初始化 ==========
 
   _initExploration() {
-    const seed = generateSeed();
-    const hasWeapon = StateManager.get('player.hasWeapon') === true;
+    // 根据剧情阶段选择地图生成方式
+    const chapter = StateManager.get('story.chapter') || 0;
+    const prologueComplete = StateManager.get('story.flags.prologueComplete') === true;
+    const chapter1Started = StateManager.get('story.flags.chapter1Started') === true;
 
-    // 生成地图名
-    const mapName = this._generateMapName(seed);
-    this._setHudText('hud-map-name', mapName);
+    let mapName = '';
+    let useStoryMap = false;
 
-    console.log('[GameScene] Generating map:', mapName, '| seed:', seed, '| hasWeapon:', hasWeapon);
+    // 序章：第一次出门
+    if (chapter === 0 && !prologueComplete) {
+      mapName = '序章 · 第一次出门';
+      useStoryMap = true;
+      this._setHudText('hud-map-name', mapName);
+      console.log('[GameScene] Generating PROLOGUE map');
 
-    // 生成地图（传入 hasWeapon 状态）
-    const generator = new MapGenerator(seed, 40, 30, { hasWeapon });
-    this._mapData = generator.generate();
+      this._mapData = MapGenerator.generatePrologue();
+      // 序章出生点已在 generatePrologue 中设置
+    }
+    // 第一章：废土初探
+    else if (chapter === 1 && !chapter1Started) {
+      mapName = '第一章 · 废土初探';
+      useStoryMap = true;
+      this._setHudText('hud-map-name', mapName);
+      console.log('[GameScene] Generating CHAPTER 1 map');
+
+      this._mapData = MapGenerator.generateChapter1();
+      // 标记第一章已开始
+      StateManager.set('story.flags.chapter1Started', true);
+    }
+
+    // 非剧情地图：随机生成
+    if (!useStoryMap) {
+      const seed = generateSeed();
+      const hasWeapon = StateManager.get('player.hasWeapon') === true;
+
+      mapName = this._generateMapName(seed);
+      this._setHudText('hud-map-name', mapName);
+
+      console.log('[GameScene] Generating random map:', mapName, '| seed:', seed, '| hasWeapon:', hasWeapon);
+
+      const generator = new MapGenerator(seed, 40, 30, { hasWeapon });
+      this._mapData = generator.generate();
+    }
+
+    this._setHudVisible('hud-map-name', true);
 
     // 创建渲染器
     this._mapRenderer = new MapRenderer(this._mapData);
     this._entityRenderer = new EntityRenderer();
 
-    // 创建玩家
+    // 创建玩家（使用地图的出生点）
     this._player = new Player(
       this._mapData.playerStart.x,
       this._mapData.playerStart.y
     );
 
-    // 生成实体
-    this._spawnEntities();
+    // 生成实体（仅非剧情地图使用随机生成；剧情地图的实体由对应方法内生成）
+    if (!useStoryMap) {
+      this._spawnEntities();
+    } else {
+      // 剧情地图：根据章节生成固定/半固定实体
+      this._spawnStoryEntities(chapter, prologueComplete, chapter1Started);
+    }
 
     // 初始化拾取物
     this._initLootItems();
@@ -413,15 +469,94 @@ export default class GameScene extends BaseScene {
 
     this._explorationReady = true;
 
+    // 序章引导提示
+    if (chapter === 0 && !prologueComplete) {
+      setTimeout(() => {
+        EventBus.emit(GameEvents.UI_NOTIFICATION, {
+          type: 'info',
+          message: '按 WASD 移动 · 按 E 交互 · 探索外面的世界…',
+        });
+      }, 800);
+    }
+
     EventBus.emit(GameEvents.EXPLORATION_START, {
-      seed,
+      mapName,
       roomCount: this._mapData.rooms.length,
+      isStory: useStoryMap,
     });
 
     EventBus.emit(GameEvents.UI_NOTIFICATION, {
       type: 'info',
-      message: `探索开始 · 地图种子: ${seed} · ${this._mapData.rooms.length} 个房间`,
+      message: `探索开始 · ${mapName} · ${this._mapData.rooms.length} 个房间`,
     });
+  }
+
+  /**
+   * 根据剧情阶段生成实体
+   */
+  _spawnStoryEntities(chapter, prologueComplete, chapter1Started) {
+    this._zombies = [];
+    this._survivors = [];
+
+    // 序章实体：在邻居家生成 1 只步行者（新手战斗教学）
+    if (chapter === 0 && !prologueComplete) {
+      // 在第二个房间（邻居家）生成一只弱化步行者
+      const rooms = this._mapData.rooms;
+      if (rooms.length >= 2) {
+        const neighborRoom = rooms[1]; // 邻居家
+        const cx = neighborRoom.centerX;
+        const cy = neighborRoom.centerY;
+        const zombie = new Zombie(cx, cy, {
+          hp: 30,        // 较弱
+          speed: 40,      // 较慢
+          attack: 5,      // 较低攻击
+          isElite: false,
+          type: 'walker',
+          patrolPath: this._generatePatrolPath(neighborRoom, cx, cy),
+        });
+        this._zombies.push(zombie);
+      }
+      return;
+    }
+    // 第一章实体
+    if (chapter === 1) {
+      for (const room of this._mapData.rooms) {
+        const cx = room.centerX;
+        const cy = room.centerY;
+
+        switch (room.type) {
+          case RoomType.ZOMBIE: {
+            const count = 1 + Math.floor(Math.random() * 2); // 1-2 只
+            for (let i = 0; i < count; i++) {
+              const zx = cx + (Math.random() - 0.5) * room.worldW * 0.3;
+              const zy = cy + (Math.random() - 0.5) * room.worldH * 0.3;
+              const zombie = new Zombie(zx, zy, {
+                hp: 50,
+                speed: 55,
+                attack: 8,
+                isElite: false,
+                type: 'walker',
+                patrolPath: this._generatePatrolPath(room, zx, zy),
+              });
+              this._zombies.push(zombie);
+            }
+            break;
+          }
+          case RoomType.SURVIVOR: {
+            const name = SURVIVOR_NAMES[Math.floor(Math.random() * SURVIVOR_NAMES.length)];
+            const dialogue = SURVIVOR_DIALOGUES[Math.floor(Math.random() * SURVIVOR_DIALOGUES.length)];
+            const survivor = new Survivor(cx, cy, {
+              name,
+              dialogue,
+              canRecruit: true,
+              role: SurvivorRole.SCAVENGER,
+            });
+            this._survivors.push(survivor);
+            break;
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -659,6 +794,7 @@ export default class GameScene extends BaseScene {
   /** 房间进入回调 */
   _onRoomEntered(room) {
     const roomLabels = {
+      home: '家',
       small_box: '小型储物间',
       large_box: '大型储物间',
       empty: '空房间',
@@ -672,6 +808,11 @@ export default class GameScene extends BaseScene {
 
     let msg = `进入 ${label}`;
     let showInteract = false;
+
+    if (room.type === RoomType.HOME) {
+      msg += ' · 这是你的安全屋…准备出发吧';
+    }
+
     if (room.hasSupplies) {
       msg += ' · 按 E 收集物资';
       showInteract = true;
@@ -980,10 +1121,10 @@ export default class GameScene extends BaseScene {
       mapCtx.restore();
     }
 
-    // 2) 实体层
+    // 2) 实体层（清空后重绘）
     const entityCtx = this.game.getEntityCtx();
     if (entityCtx) {
-      this.clearLayer(2); // 清空实体层
+      this.clearLayer(2);
 
       entityCtx.save();
       entityCtx.translate(-this._camera.x, -this._camera.y);
@@ -1023,9 +1164,9 @@ export default class GameScene extends BaseScene {
       entityCtx.restore();
     }
 
-    // 3) 小地图（右上角）
+    // 3) FX 层：小地图（右上角）
     const fxCtx = this.game.getLayer(3)?.ctx;
-    if (fxCtx && this._player) {
+    if (fxCtx && this._player && this._mapRenderer) {
       this.clearLayer(3);
       const mmSize = 140;
       const mmPadding = 12;

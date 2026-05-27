@@ -10,6 +10,7 @@ import { SeededRandom } from '../utils/Random.js';
 
 /** 房间类型 */
 export const RoomType = Object.freeze({
+  HOME: 'home',        // 家（序章出生点）
   SMALL_BOX: 'small_box',
   LARGE_BOX: 'large_box',
   EMPTY: 'empty',
@@ -595,6 +596,304 @@ export default class MapGenerator {
       const ex = (bg.gridX + bg.gridW - 2) * TILE_SIZE + TILE_SIZE / 2;
       const ey = (bg.gridY + Math.floor(bg.gridH / 2)) * TILE_SIZE + TILE_SIZE / 2;
       map.exitPoint = { x: ex, y: ey };
+    }
+  }
+
+  // ============ 静态方法：剧本地图生成 ============
+
+  /**
+   * 生成序章地图：「第一次出门」
+   * 小地图，固定布局：家 → 小区走廊 → 邻居家/储藏室
+   * @returns {MapData}
+   */
+  static generatePrologue() {
+    const gridW = 22;
+    const gridH = 18;
+    const map = new MapData(gridW, gridH);
+
+    // 全部初始化为墙壁
+    for (let y = 0; y < gridH; y++) {
+      map.tiles[y] = new Array(gridW).fill(TileType.WALL);
+    }
+
+    // --- 手工雕刻房间 ---
+
+    // 1) 家房间 (5x5)，左上角
+    const homeRoom = new Room(2, 2, 5, 5, RoomType.HOME);
+    homeRoom.hasSupplies = true;
+    homeRoom.supplyType = 'food';
+    this._carveRoomFloor(map, homeRoom);
+    map.rooms.push(homeRoom);
+
+    // 2) 走廊（水平），连接家 → 右侧
+    const corr1Y = 4;
+    for (let x = 7; x <= 10; x++) {
+      map.tiles[corr1Y][x] = TileType.CORRIDOR;
+    }
+
+    // 3) 邻居家 (4x4)，右侧
+    const neighborRoom = new Room(11, 2, 4, 4, RoomType.EMPTY);
+    this._carveRoomFloor(map, neighborRoom);
+    map.rooms.push(neighborRoom);
+
+    // 4) 走廊（水平），继续向右
+    const corr2Y = 4;
+    for (let x = 15; x <= 17; x++) {
+      map.tiles[corr2Y][x] = TileType.CORRIDOR;
+    }
+
+    // 5) 储藏室/物资房 (3x3)，最右侧
+    const supplyRoom = new Room(18, 3, 3, 3, RoomType.SUPPLY);
+    supplyRoom.hasSupplies = true;
+    supplyRoom.supplyType = 'ammo';
+    this._carveRoomFloor(map, supplyRoom);
+    map.rooms.push(supplyRoom);
+
+    // --- 生成门 ---
+    this._addDoorToRoom(map, homeRoom,   7, 4, DoorSide.RIGHT);
+    this._addDoorToRoom(map, neighborRoom, 10, 4, DoorSide.LEFT);
+    this._addDoorToRoom(map, neighborRoom, 15, 4, DoorSide.RIGHT);
+    this._addDoorToRoom(map, supplyRoom,  17, 4, DoorSide.LEFT);
+
+    // --- 少量走廊拾取物 ---
+    map.lootItems.push({
+      x: 9 * TILE_SIZE + TILE_SIZE / 2,
+      y: corr1Y * TILE_SIZE + TILE_SIZE / 2,
+      type: 'food', amount: 1, collected: false,
+      gridX: 9, gridY: corr1Y,
+    });
+
+    // --- 出生点：家房间中心 ---
+    map.playerStart = { x: homeRoom.centerX, y: homeRoom.centerY };
+
+    // --- 出口：储藏室右侧 ---
+    map.exitPoint = {
+      x: supplyRoom.worldX + supplyRoom.worldW + TILE_SIZE,
+      y: supplyRoom.centerY,
+    };
+
+    return map;
+  }
+
+  /**
+   * 生成第一章地图：「废土初探」
+   * 6-8 个房间，含安全屋、幸存者、丧尸、物资
+   * @returns {MapData}
+   */
+  static generateChapter1() {
+    const gridW = 30;
+    const gridH = 25;
+    const map = new MapData(gridW, gridH);
+
+    // 全部初始化为墙壁
+    for (let y = 0; y < gridH; y++) {
+      map.tiles[y] = new Array(gridW).fill(TileType.WALL);
+    }
+
+    // 简易确定性"随机"（基于固定种子模拟变异）
+    let hash = 0;
+    const hashStr = 'chapter1_wasteland';
+    for (let i = 0; i < hashStr.length; i++) {
+      const ch = hashStr.charCodeAt(i);
+      hash = ((hash << 5) - hash + ch) | 0;
+    }
+    const simpleRnd = () => {
+      hash = (hash * 16807 + 0) % 2147483647;
+      return (hash & 0x7fffffff) / 0x7fffffff;
+    };
+    const rndInt = (min, max) => min + Math.floor(simpleRnd() * (max - min + 1));
+
+    // 房间布局定义：[gridX, gridY, gridW, gridH, type]
+    const roomDefs = [
+      [2,  2,  4, 4, RoomType.EMPTY],     // 安全屋（书房/避难所）
+      [8,  2,  4, 4, RoomType.SUPPLY],    // 物资房
+      [14, 1,  5, 5, RoomType.ZOMBIE],    // 丧尸房 1
+      [21, 3,  4, 3, RoomType.EMPTY],     // 空房
+      [2,  9,  4, 4, RoomType.SURVIVOR],  // 幸存者房
+      [8,  9,  5, 5, RoomType.ZOMBIE],    // 丧尸房 2
+      [15, 9,  4, 4, RoomType.SUPPLY],    // 物资房 2
+      [21, 9,  3, 5, RoomType.EMPTY],     // 空房
+    ];
+
+    for (const def of roomDefs) {
+      const [rx, ry, rw, rh, type] = def;
+      const room = new Room(rx, ry, rw, rh, type);
+      this._carveRoomFloor(map, room);
+
+      if (type === RoomType.SUPPLY) {
+        room.hasSupplies = true;
+        room.supplyType = ['food', 'water', 'ammo', 'parts'][rndInt(0, 3)];
+      }
+
+      // 安全屋（第一个 EMPTY 房改为安全屋）
+      if (room === map.rooms[0] && type === RoomType.EMPTY) {
+        room.hasSupplies = true;
+        room.supplyType = 'food';
+      }
+
+      map.rooms.push(room);
+    }
+
+    // 连接走廊（手工连线）
+    const connect = (roomA, roomB) => {
+      const ax = Math.floor(roomA.centerX / TILE_SIZE);
+      const ay = Math.floor(roomA.centerY / TILE_SIZE);
+      const bx = Math.floor(roomB.centerX / TILE_SIZE);
+      const by = Math.floor(roomB.centerY / TILE_SIZE);
+
+      // 水平段
+      const xMin = Math.min(ax, bx);
+      const xMax = Math.max(ax, bx);
+      for (let x = xMin; x <= xMax; x++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          const ny = ay + dy;
+          if (ny >= 0 && ny < gridH && x >= 0 && x < gridW) {
+            if (map.tiles[ny][x] === TileType.WALL) {
+              map.tiles[ny][x] = TileType.CORRIDOR;
+            }
+          }
+        }
+      }
+
+      // 垂直段
+      const yMin = Math.min(ay, by);
+      const yMax = Math.max(ay, by);
+      for (let y = yMin; y <= yMax; y++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = bx + dx;
+          if (y >= 0 && y < gridH && nx >= 0 && nx < gridW) {
+            if (map.tiles[y][nx] === TileType.WALL) {
+              map.tiles[y][nx] = TileType.CORRIDOR;
+            }
+          }
+        }
+      }
+    };
+
+    // 连接所有相邻房间对
+    const rooms = map.rooms;
+    connect(rooms[0], rooms[1]); // 安全屋 → 物资房
+    connect(rooms[1], rooms[2]); // 物资房 → 丧尸房1
+    connect(rooms[2], rooms[3]); // 丧尸房1 → 空房
+    connect(rooms[0], rooms[4]); // 安全屋 ↓ 幸存者房
+    connect(rooms[4], rooms[5]); // 幸存者房 → 丧尸房2
+    connect(rooms[5], rooms[6]); // 丧尸房2 → 物资房2
+    connect(rooms[6], rooms[7]); // 物资房2 → 空房
+    connect(rooms[3], rooms[7]); // 上方空房 ↓ 下方空房
+
+    // 生成门（每个房间 1-2 扇门）
+    for (const room of map.rooms) {
+      const candidates = [];
+      this._collectDoorCandidatesFixed(map, room, candidates);
+      if (candidates.length === 0) continue;
+      const doorCount = Math.min(2, candidates.length);
+      const shuffled = [...candidates].sort(() => simpleRnd() - 0.5);
+      for (let i = 0; i < doorCount; i++) {
+        const { gx, gy, side } = shuffled[i];
+        if (map.tiles[gy]?.[gx] === TileType.WALL) {
+          map.tiles[gy][gx] = TileType.DOOR;
+          room.doors.push({ gx, gy, side });
+        }
+      }
+    }
+
+    // 走廊拾取物
+    const corridorTiles = [];
+    for (let y = 0; y < gridH; y++) {
+      for (let x = 0; x < gridW; x++) {
+        if (map.tiles[y][x] === TileType.CORRIDOR) {
+          corridorTiles.push({ gx: x, gy: y });
+        }
+      }
+    }
+    const shuffled = [...corridorTiles].sort(() => simpleRnd() - 0.5);
+    const lootCount = Math.min(8, shuffled.length);
+    const lootTypes = ['ammo', 'medkit', 'parts', 'food'];
+    for (let i = 0; i < lootCount; i++) {
+      const { gx, gy } = shuffled[i];
+      const type = lootTypes[rndInt(0, 3)];
+      map.lootItems.push({
+        x: gx * TILE_SIZE + TILE_SIZE / 2,
+        y: gy * TILE_SIZE + TILE_SIZE / 2,
+        type, amount: type === 'ammo' ? rndInt(3, 8) : rndInt(1, 3),
+        collected: false,
+        gridX: gx, gridY: gy,
+      });
+    }
+
+    // 出生点：安全屋（第一个房间）
+    const safeRoom = map.rooms[0];
+    map.playerStart = { x: safeRoom.centerX, y: safeRoom.centerY };
+
+    // 出口：最后一个房间右侧
+    const lastRoom = map.rooms[map.rooms.length - 1];
+    map.exitPoint = {
+      x: lastRoom.worldX + lastRoom.worldW + TILE_SIZE,
+      y: lastRoom.centerY,
+    };
+
+    return map;
+  }
+
+  // ---- 静态辅助 ----
+
+  /** 雕刻单个房间地板 */
+  static _carveRoomFloor(map, room) {
+    for (let y = room.gridY; y < room.gridY + room.gridH; y++) {
+      for (let x = room.gridX; x < room.gridX + room.gridW; x++) {
+        if (y >= 0 && y < map.gridH && x >= 0 && x < map.gridW) {
+          map.tiles[y][x] = TileType.FLOOR;
+        }
+      }
+    }
+  }
+
+  /** 直接在指定网格位置添加一扇门 */
+  static _addDoorToRoom(map, room, gx, gy, side) {
+    if (map.tiles[gy]?.[gx] === TileType.WALL) {
+      map.tiles[gy][gx] = TileType.DOOR;
+    }
+    room.doors.push({ gx, gy, side });
+  }
+
+  /** 收集房间门候选位置（固定网格版） */
+  static _collectDoorCandidatesFixed(map, room, candidates) {
+    const rx = room.gridX;
+    const ry = room.gridY;
+    const rw = room.gridW;
+    const rh = room.gridH;
+
+    // 上墙
+    if (ry > 0) {
+      for (let x = rx + 1; x < rx + rw - 1; x++) {
+        if (x >= 0 && x < map.gridW) {
+          candidates.push({ gx: x, gy: ry - 1, side: DoorSide.TOP });
+        }
+      }
+    }
+    // 下墙
+    if (ry + rh < map.gridH) {
+      for (let x = rx + 1; x < rx + rw - 1; x++) {
+        if (x >= 0 && x < map.gridW) {
+          candidates.push({ gx: x, gy: ry + rh, side: DoorSide.BOTTOM });
+        }
+      }
+    }
+    // 左墙
+    if (rx > 0) {
+      for (let y = ry + 1; y < ry + rh - 1; y++) {
+        if (y >= 0 && y < map.gridH) {
+          candidates.push({ gx: rx - 1, gy: y, side: DoorSide.LEFT });
+        }
+      }
+    }
+    // 右墙
+    if (rx + rw < map.gridW) {
+      for (let y = ry + 1; y < ry + rh - 1; y++) {
+        if (y >= 0 && y < map.gridH) {
+          candidates.push({ gx: rx + rw, gy: y, side: DoorSide.RIGHT });
+        }
+      }
     }
   }
 }
