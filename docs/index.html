@@ -113,6 +113,23 @@
       </div>
     </div>
 
+    <!-- 全屏大地图面板 -->
+    <div id="map-panel" class="fullscreen-overlay hidden">
+      <div id="map-panel-bg"></div>
+      <div id="map-panel-content">
+        <div id="map-panel-header">
+          <h2 id="map-panel-title">地图</h2>
+          <button class="map-panel-close-btn" id="map-close">✕</button>
+        </div>
+        <canvas id="canvas-fullmap"></canvas>
+        <div id="map-panel-legend">
+          <span class="map-legend-item"><span class="map-legend-dot explored"></span> 已探索</span>
+          <span class="map-legend-item"><span class="map-legend-dot unexplored"></span> 未探索</span>
+          <span class="map-legend-item"><span class="map-legend-dot player"></span> 玩家位置</span>
+        </div>
+      </div>
+    </div>
+
     <!-- 背包面板 -->
     <div id="inventory-panel" class="panel-overlay hidden">
       <div class="panel-container">

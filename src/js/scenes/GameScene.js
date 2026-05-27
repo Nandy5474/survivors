@@ -19,6 +19,8 @@ import { generateSeed } from '../utils/Random.js';
 import CombatManager from '../combat/CombatManager.js';
 import CombatUI from '../combat/CombatUI.js';
 import MobileControls, { TouchEvents } from '../ui/MobileControls.js';
+import FullMapRenderer from '../renderers/FullMapRenderer.js';
+import FloorMapPanel from '../ui/FloorMapPanel.js';
 import InventorySystem from '../systems/InventorySystem.js';
 import BaseSystem, { BuildingType, BUILDING_DEFS, SURVIVOR_JOB_LABELS } from '../systems/BaseSystem.js';
 import { ITEM_DEFS, ItemCategory } from '../systems/InventorySystem.js';
@@ -78,6 +80,13 @@ export default class GameScene extends BaseScene {
     this._isMobile = MobileControls.isMobile();
     this._prologueDefeatedZombie = false;
     this._prologueLootedStore = false;
+    
+    /** 全屏大地图 */
+    this._fullMapRenderer = null;
+    this._mapPanelVisible = false;
+    this._mapPanelEl = null;
+    this._mapCanvasEl = null;
+    this._mapCloseBtn = null;
   }
 
   async create() {
@@ -87,6 +96,9 @@ export default class GameScene extends BaseScene {
     this._bindPauseEvents();
     this._bindHudButtons();
     this._bindPanelEvents();
+    this._initMapPanel();
+    this._floorMapPanel = new FloorMapPanel(this.game, null);
+    this._floorMapPanel.init();
     this._baseSystem = new BaseSystem();
     this._baseSystem.onChanged(() => this._renderBasePanel());
     this._inventory.onChanged(() => this._renderInventoryPanel());
@@ -224,6 +236,11 @@ export default class GameScene extends BaseScene {
     this._setHudVisible('hud-map-name', true);
     this._mapRenderer = new MapRenderer(this._mapData);
     this._entityRenderer = new EntityRenderer();
+    // 更新全屏地图和楼层地图
+    this._fullMapRenderer = new FullMapRenderer(this._mapData);
+    if (this._floorMapPanel) {
+      this._floorMapPanel.mapData = this._mapData;
+    }
     this._player = new Player(this._mapData.playerStart.x, this._mapData.playerStart.y);
 
     if (!useStoryMap) this._spawnEntities();
@@ -400,17 +417,33 @@ export default class GameScene extends BaseScene {
 
   _getInputX() {
     let val = 0;
+    // 键盘输入
     if (this._keys.has('d') || this._keys.has('D') || this._keys.has('ArrowRight')) val += 1;
     if (this._keys.has('a') || this._keys.has('A') || this._keys.has('ArrowLeft')) val -= 1;
-    if (this._mobileInput && (Math.abs(this._mobileInput.x) > 0.12)) val = this._mobileInput.x;
+    
+    // 移动端摇杆输入（从 MobileControls 获取）
+    if (this._mobileControls && this._mobileControls._joystickInput.active) {
+      const mobileInput = this._mobileControls.getInput();
+      if (Math.abs(mobileInput.x) > 0.12) {
+        val = mobileInput.x;
+      }
+    }
     return val;
   }
 
   _getInputY() {
     let val = 0;
+    // 键盘输入
     if (this._keys.has('s') || this._keys.has('S') || this._keys.has('ArrowDown')) val += 1;
     if (this._keys.has('w') || this._keys.has('W') || this._keys.has('ArrowUp')) val -= 1;
-    if (this._mobileInput && (Math.abs(this._mobileInput.y) > 0.12)) val = this._mobileInput.y;
+    
+    // 移动端摇杆输入（从 MobileControls 获取）
+    if (this._mobileControls && this._mobileControls._joystickInput.active) {
+      const mobileInput = this._mobileControls.getInput();
+      if (Math.abs(mobileInput.y) > 0.12) {
+        val = mobileInput.y;
+      }
+    }
     return val;
   }
 
@@ -586,7 +619,13 @@ export default class GameScene extends BaseScene {
     const fxCtx = this.game.getLayer(3)?.ctx;
     if (fxCtx && this._player && this._mapRenderer) {
       this.clearLayer(3);
-      this._mapRenderer.renderMinimap(fxCtx, canvas.width - 152, 12, 140, { x: this._player.x, y: this._player.y });
+      // 小地图已改为全屏 M 键面板，不再常驻渲染
+      // 渲染 HUD 文本（当前楼层/坐标）
+      const floor = StateManager.get('gameState.currentFloor') || 1;
+      fxCtx.fillStyle = 'rgba(255,255,255,0.6)';
+      fxCtx.font = '11px sans-serif';
+      fxCtx.textAlign = 'right';
+      fxCtx.fillText(`${Math.floor(this._player.x)}, ${Math.floor(this._player.y)}  F${floor}`, canvas.width - 16, 20);
     }
   }
 
@@ -624,16 +663,43 @@ export default class GameScene extends BaseScene {
     this._unsubscribers.push(EventBus.on(GameEvents.UI_NOTIFICATION, ({ type, message }) => this._showNotification(type, message)));
     this._unsubscribers.push(EventBus.on(GameEvents.COMBAT_END, (result) => this._onCombatEnd(result)));
 
-    // 移动端触控事件
-    this._unsubscribers.push(EventBus.on(TouchEvents.TOUCH_JOYSTICK, ({ x, y }) => { this._mobileInput = { x, y }; }));
+    // 移动端触控事件（摇杆输入直接通过 MobileControls.getInput() 获取，这里仅处理按钮事件）
     this._unsubscribers.push(EventBus.on(TouchEvents.TOUCH_INTERACT, () => { if (!this._isPaused) this.onInteract(); }));
-    this._unsubscribers.push(EventBus.on(TouchEvents.TOUCH_ATTACK, () => { if (this._combatManager?.inCombat) this._combatManager.playerAction('attack'); else if (!this._isPaused) this.onInteract(); }));
+    this._unsubscribers.push(EventBus.on(TouchEvents.TOUCH_ATTACK, () => { if (this._combatManager?.inCombat) this._combatManager.playerAction('attack'); }));
     this._unsubscribers.push(EventBus.on(TouchEvents.TOUCH_DODGE, () => { if (this._combatManager?.inCombat) this._combatManager.playerAction('defend'); }));
     this._unsubscribers.push(EventBus.on(TouchEvents.TOUCH_BACKPACK, () => { if (!this._isPaused) { this._closeActivePanel(); this._openInventoryPanel(); } }));
     this._unsubscribers.push(EventBus.on(TouchEvents.TOUCH_MENU, () => { if (this._isPaused) this.game.resume(); else this.game.pause(); }));
 
-    const onEsc = (e) => { if (e.key === 'Escape') { if (this._isPaused) this.game.resume(); else this.game.pause(); } };
-    window.addEventListener('keydown', onEsc); this._unsubscribers.push(() => window.removeEventListener('keydown', onEsc));
+    // M 键打开/关闭大地图
+    const onMapKey = (e) => {
+      if (e.key === 'm' || e.key === 'M') {
+        if (this._mapPanelVisible) {
+          this._closeMapPanel();
+        } else if (this.mode === GameMode.EXPLORATION && this._mapData) {
+          this._openMapPanel();
+        }
+      }
+      // ESC 关闭地图
+      if (e.key === 'Escape' && this._mapPanelVisible) {
+        this._closeMapPanel();
+      }
+    };
+    window.addEventListener('keydown', onMapKey);
+    this._unsubscribers.push(() => window.removeEventListener('keydown', onMapKey));
+
+    // ESC 通用暂停
+    const onEsc = (e) => {
+      if (e.key === 'Escape') {
+        if (this._mapPanelVisible) {
+          this._closeMapPanel();
+          return;
+        }
+        if (this._isPaused) this.game.resume();
+        else this.game.pause();
+      }
+    };
+    window.addEventListener('keydown', onEsc);
+    this._unsubscribers.push(() => window.removeEventListener('keydown', onEsc));
   }
 
   _onCombatEnd(result) {
@@ -714,6 +780,77 @@ export default class GameScene extends BaseScene {
   _closeActivePanel() { if (this._activePanel === 'inventory') this._closeInventoryPanel(); if (this._activePanel === 'base') this._closeBasePanel(); }
   _openPanel(id) { this._closeActivePanel(); this._activePanel = id; document.getElementById(`${id}-panel`)?.classList.remove('hidden'); }
   _closePanel(id) { if (this._activePanel !== id) return; this._activePanel = null; document.getElementById(`${id}-panel`)?.classList.add('hidden'); }
+
+  // ---- 全屏地图面板 ----
+
+  _initMapPanel() {
+    this._mapPanelEl = document.getElementById('map-panel');
+    this._mapCanvasEl = document.getElementById('canvas-fullmap');
+    this._mapCloseBtn = document.getElementById('map-close');
+
+    if (this._mapCloseBtn) {
+      const closeHandler = () => this._closeMapPanel();
+      this._mapCloseBtn.addEventListener('click', closeHandler);
+      this._panelHandlers.set('map-close', closeHandler);
+    }
+
+    // 点击背景关闭
+    if (this._mapPanelEl) {
+      const bgClickHandler = (e) => {
+        if (e.target === this._mapPanelEl || e.target.id === 'map-panel-bg') {
+          this._closeMapPanel();
+        }
+      };
+      this._mapPanelEl.addEventListener('click', bgClickHandler);
+      this._panelHandlers.set('map-panel', bgClickHandler);
+    }
+  }
+
+  _openMapPanel() {
+    if (!this._mapPanelEl || !this._mapCanvasEl) return;
+    
+    this._mapPanelEl.classList.remove('hidden');
+    this._mapPanelVisible = true;
+    
+    // 暂停游戏
+    if (!this._isPaused) {
+      this._isPaused = true;
+    }
+    
+    // 初始化 FullMapRenderer
+    if (!this._fullMapRenderer) {
+      this._fullMapRenderer = new FullMapRenderer(this._mapData);
+    }
+    
+    // 设置画布大小
+    const maxW = Math.min(window.innerWidth * 0.85, 1200);
+    const maxH = Math.min(window.innerHeight * 0.7, 800);
+    this._mapCanvasEl.width = maxW;
+    this._mapCanvasEl.height = maxH;
+    
+    // 渲染地图
+    const ctx = this._mapCanvasEl.getContext('2d');
+    if (ctx && this._fullMapRenderer) {
+      this._fullMapRenderer.render(
+        ctx,
+        maxW,
+        maxH,
+        this._player ? { x: this._player.x, y: this._player.y } : null
+      );
+    }
+  }
+
+  _closeMapPanel() {
+    if (!this._mapPanelEl) return;
+    
+    this._mapPanelEl.classList.add('hidden');
+    this._mapPanelVisible = false;
+    
+    // 恢复游戏（仅当没有被其他面板或暂停锁定）
+    if (this._isPaused && !this._pauseOverlay?.classList.contains('hidden') === false) {
+      this._isPaused = false;
+    }
+  }
   _openInventoryPanel() { this._invFilter = 'all'; this._openPanel('inventory'); this._renderInventoryPanel(); }
   _closeInventoryPanel() { this._closePanel('inventory'); }
 
