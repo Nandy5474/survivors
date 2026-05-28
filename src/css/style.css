@@ -76,10 +76,10 @@ html, body {
   display: block;
 }
 
-/* Canvas z-index 自底向上堆叠 */
-#canvas-fog    { z-index: 1; }
-#canvas-map    { z-index: 2; }
-#canvas-entity  { z-index: 3; }
+/* Canvas z-index 自底向上堆叠 — 迷雾层覆盖实体但低于 HUD 特效 */
+#canvas-map    { z-index: 1; }
+#canvas-entity  { z-index: 2; }
+#canvas-fog    { z-index: 3; }
 #canvas-fx     { z-index: 4; }
 
 /* -------------------- UI 层 -------------------- */
@@ -525,21 +525,31 @@ body {
 
 /* -------------------- 移动端触控专属 -------------------- */
 
-/* 虚拟摇杆 (JS 动态创建, 此处保留参考) */
-#mobile-joystick {
+/* ==================== 移动端控件布局（z-index 统一管理） ==================== */
+/* z-index 层级: 摇杆/按钮(15) < 地图面板(20) < 暂停菜单(30) < 菜单按钮(110) */
+
+/* 虚拟摇杆 */
+#mobile-joystick, #mc-joystick {
   touch-action: none;
   -webkit-touch-callout: none;
+  z-index: 15 !important;
 }
 
-/* 移动端交互按钮 */
-#mobile-interact-btn {
-  transition: transform 0.12s ease, background 0.2s ease, border-color 0.2s ease;
+/* 交互按钮 (E) */
+#mobile-interact-btn, #mc-interact-btn {
+  touch-action: manipulation;
+  z-index: 15 !important;
 }
 
-#mobile-interact-btn:active {
-  background: rgba(230, 57, 70, 0.6) !important;
-  border-color: rgba(255, 100, 100, 0.7) !important;
-  transform: scale(0.88);
+/* 战斗按钮组 */
+.mc-combat-btn, #mc-combat-btns button {
+  touch-action: manipulation;
+  z-index: 15 !important;
+}
+
+/* 菜单按钮保持 110（始终在最上层） */
+#mc-menu-btn {
+  touch-action: manipulation;
 }
 
 /* 移动端 HUD 优化 */

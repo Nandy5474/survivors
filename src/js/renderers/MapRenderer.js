@@ -135,47 +135,46 @@ export default class MapRenderer {
       ctx.stroke();
     }
 
-    // 4) 绘制迷雾
+    // 4) 绘制迷雾（map canvas 内联模式 — 向下兼容；fog canvas 模式由 GameScene 显式调用 renderFog）
     if (this.fogEnabled) {
-      this._renderFog(ctx, viewport);
+      this.renderFog(ctx, viewport);
     }
   }
 
   /**
-   * 渲染迷雾
-   * 修复：未探索房间完全涂黑，防止瓦片间漏光
+   * 渲染迷雾（公开方法 — GameScene 在独立 fog canvas 上调用）
+   * 修复：未探索房间完全涂黑，防止瓦片间漏光；覆盖走廊段通往未探索房间
    */
-  _renderFog(ctx, viewport) {
+  renderFog(ctx, viewport) {
     const { mapData } = this;
     const tw = TILE_SIZE;
     const th = TILE_SIZE;
 
-    // 优化：只处理视口内的区域
     const startCol = Math.max(0, Math.floor(viewport.x / tw));
     const endCol = Math.min(mapData.gridW, Math.ceil((viewport.x + viewport.w) / tw));
     const startRow = Math.max(0, Math.floor(viewport.y / th));
     const endRow = Math.min(mapData.gridH, Math.ceil((viewport.y + viewport.h) / th));
 
-    // ① 先涂黑整个未探索房间（防止瓦片间隙漏光）
+    // (1) 先涂黑整个未探索房间（防止瓦片间隙漏光）
     ctx.fillStyle = FOG_COLOR;
     for (const room of mapData.rooms) {
       if (room.explored) continue;
       ctx.fillRect(
-        room.worldX - viewport.x,
-        room.worldY - viewport.y,
+        room.worldX,
+        room.worldY,
         room.worldW,
         room.worldH
       );
     }
 
-    // ② 再逐格涂黑走廊/散落可通行瓦片
+    // (2) 再逐格涂黑走廊和散落可通行瓦片（含通往未探索房间的走廊段）
     for (let y = startRow; y < endRow; y++) {
       for (let x = startCol; x < endCol; x++) {
         const room = mapData.getRoomAt(x, y);
         if (!room || !room.explored) {
           const tile = mapData.tiles[y]?.[x];
           if (tile !== TileType.WALL) {
-            ctx.fillRect(x * tw - viewport.x, y * th - viewport.y, tw, th);
+            ctx.fillRect(x * tw, y * th, tw, th);
           }
         }
       }

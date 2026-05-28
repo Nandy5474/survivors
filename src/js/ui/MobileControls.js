@@ -123,13 +123,14 @@ export default class MobileControls {
     const s = document.createElement('style');
     s.id = 'mc-styles-v4';
     s.textContent = `
+      /* z-index: 摇杆/按钮(15) < 地图面板(90) < 暂停菜单(z--menu=30) < 菜单按钮(110) */
       #mc-joystick {
         position: fixed;
-        left: 20px;
-        bottom: 110px;
+        left: 3vw;
+        bottom: 5vh;
         width: 130px;
         height: 130px;
-        z-index: 100;
+        z-index: 15;
         pointer-events: none;
         display: none;
       }
@@ -159,10 +160,11 @@ export default class MobileControls {
         pointer-events: none;
         transition: transform 0.05s ease-out;
       }
+      /* 交互按钮 (E) — 右下，战斗按钮上方 */
       #mc-interact-btn {
         position: fixed;
-        right: 24px;
-        bottom: 150px;
+        right: 3vw;
+        bottom: 20vh;
         width: 64px;
         height: 64px;
         border-radius: 50%;
@@ -171,7 +173,7 @@ export default class MobileControls {
         color: #fff;
         font-size: 22px;
         font-weight: 700;
-        z-index: 100;
+        z-index: 15;
         display: none;
         align-items: center;
         justify-content: center;
@@ -183,6 +185,7 @@ export default class MobileControls {
         touch-action: manipulation;
         box-shadow: 0 0 18px rgba(230, 57, 70, 0.25);
       }
+      /* 战斗按钮 — 右下横向排列 */
       .mc-combat-btn {
         position: fixed;
         width: 58px;
@@ -191,7 +194,7 @@ export default class MobileControls {
         color: #fff;
         font-size: 14px;
         font-weight: 600;
-        z-index: 100;
+        z-index: 15;
         display: none;
         align-items: center;
         justify-content: center;
@@ -203,27 +206,28 @@ export default class MobileControls {
         touch-action: manipulation;
       }
       #mc-attack-btn {
-        right: 24px;
-        bottom: 200px;
+        right: 3vw;
+        bottom: 5vh;
         background: rgba(220, 38, 38, 0.5);
         border: 2px solid rgba(220, 38, 38, 0.7);
       }
       #mc-dodge-btn {
-        right: 90px;
-        bottom: 200px;
+        right: calc(3vw + 68px);
+        bottom: 5vh;
         background: rgba(245, 158, 11, 0.5);
         border: 2px solid rgba(245, 158, 11, 0.7);
       }
       #mc-backpack-btn {
-        right: 24px;
-        bottom: 130px;
+        right: calc(3vw + 136px);
+        bottom: 5vh;
         background: rgba(59, 130, 246, 0.5);
         border: 2px solid rgba(59, 130, 246, 0.7);
       }
+      /* 菜单按钮 — 右上角，始终显示 */
       #mc-menu-btn {
         position: fixed;
-        right: 12px;
-        top: 12px;
+        right: 2vw;
+        top: 6vh;
         width: 42px;
         height: 42px;
         border-radius: 8px;

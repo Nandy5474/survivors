@@ -209,11 +209,11 @@ export default class Game {
   }
 
   /**
-   * 获取实体层的 2D 上下文
+   * 获取迷雾层的 2D 上下文
    * @returns {CanvasRenderingContext2D|null}
    */
-  getEntityCtx() {
-    return this._canvasLayers[2]?.ctx || null;
+  getFogCtx() {
+    return this._canvasLayers[0]?.ctx || null;
   }
 
   // ---- 私有 ----

@@ -179,18 +179,18 @@ export default class GameScene extends BaseScene {
     EventBus.emit(GameEvents.SCENE_CHANGE, { scene: `game:${mode}`, data: { prevMode: prev } });
   }
 
-  /** Task 4: 序章完成后自动返回基地 */
+  /** Task 4: 序章完成条件 — 探索了便利店（SUPPLY）即完成 */
   _cleanupExploration() {
     const chapter = StateManager.get('story.chapter') || 0;
     const prologueComplete = StateManager.get('story.flags.prologueComplete') === true;
     if (chapter === 0 && !prologueComplete) {
-      const exploredCount = this._mapData ? this._mapData.rooms.filter(r => r.explored).length : 0;
-      if (exploredCount >= 2 && this._prologueDefeatedZombie && this._prologueLootedStore) {
+      const supplyRoom = this._mapData ? this._mapData.rooms.find(r => r.type === RoomType.SUPPLY) : null;
+      if (supplyRoom && supplyRoom.explored) {
         StateManager.set('story.flags.prologueComplete', true);
         StateManager.set('story.chapter', 1);
-        EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'success', message: '序章完成！' });
+        EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'success', message: '序章完成！前路还很漫长，但至少今晚的晚餐有了着落。先回家整理一下物资，明天再深入探索...' });
         this._updateBaseButtonState();
-        setTimeout(() => { this.setMode(GameMode.BASE); this._drawBaseBackground(); this._openBasePanel(); }, 2000);
+        setTimeout(() => { this.setMode(GameMode.BASE); this._drawBaseBackground(); this._openBasePanel(); }, 3000);
         return;
       }
     }
@@ -461,17 +461,23 @@ export default class GameScene extends BaseScene {
     let showInteract = false;
     const isPrologue = StateManager.get('story.chapter') === 0 && StateManager.get('story.flags.prologueComplete') !== true;
 
-    if (room.type === RoomType.HOME) msg += ' · 这是你的安全屋…准备出发吧';
+    if (room.type === RoomType.HOME) {
+      if (isPrologue) msg = '家里的食物快吃完了，必须出门寻找补给。';
+      else msg += ' · 这是你的安全屋…准备出发吧';
+    }
     if (room.hasSupplies) { msg += ' · 按 E 收集物资'; showInteract = true; }
     if (room.type === RoomType.ZOMBIE) {
-      if (isPrologue) msg = '邻居老王已经彻底变了...必须解决掉它。';
+      if (isPrologue) msg = '邻居已经变成了丧尸...这就是末日的残酷。';
       else msg += ' · 发现丧尸！准备战斗';
       const nearest = this._findNearestZombie(room, 200);
       if (nearest && !this._combatManager.inCombat) { this._startCombat(nearest); return; }
     }
     if (room.type === RoomType.SUPPLY) {
-      if (isPrologue) msg = '找到了便利店！趁还没被洗劫一空，赶紧拿些必需品。';
+      if (isPrologue) msg = '找到了便利店！拿到了一把生锈的匕首和一些食物...';
       showInteract = true;
+    }
+    if (room.type === RoomType.EMPTY) {
+      if (isPrologue) msg = '前路还很漫长，但至少今晚的晚餐有了着落。先回家整理一下物资，明天再深入探索...';
     }
     if (room.type === RoomType.SURVIVOR) { msg += ' · 发现幸存者！按 E 对话'; showInteract = true; }
 
@@ -618,8 +624,10 @@ export default class GameScene extends BaseScene {
     if (!this._mapData || !this._mapRenderer || !this._entityRenderer) return;
     const canvas = this.game?.getLayer(1)?.canvas; if (!canvas) return;
     const vp = { x: this._camera.x, y: this._camera.y, w: canvas.width, h: canvas.height };
+    // 第一遍：渲染地图
     const mapCtx = this.game.getMapCtx();
-    if (mapCtx) { mapCtx.save(); mapCtx.translate(-this._camera.x, -this._camera.y); this._mapRenderer.render(mapCtx, vp); mapCtx.restore(); }
+    if (mapCtx) { this.clearLayer(1); mapCtx.save(); mapCtx.translate(-this._camera.x, -this._camera.y); this._mapRenderer.render(mapCtx, vp); mapCtx.restore(); }
+    // 第二遍：渲染实体
     const entityCtx = this.game.getEntityCtx();
     if (entityCtx) {
       this.clearLayer(2); entityCtx.save(); entityCtx.translate(-this._camera.x, -this._camera.y);
@@ -629,11 +637,18 @@ export default class GameScene extends BaseScene {
       for (const l of this._lootItems) this._entityRenderer.renderLootItem(entityCtx, l, l.x, l.y);
       entityCtx.restore();
     }
+    // 第三遍：渲染迷雾（覆盖实体但低于 HUD）
+    const fogCtx = this.game.getFogCtx();
+    if (fogCtx && this._mapRenderer) {
+      this.clearLayer(0);
+      fogCtx.save(); fogCtx.translate(-this._camera.x, -this._camera.y);
+      this._mapRenderer.renderFog(fogCtx, vp);
+      fogCtx.restore();
+    }
+    // 第四遍：HUD 文字叠在最上层
     const fxCtx = this.game.getLayer(3)?.ctx;
-    if (fxCtx && this._player && this._mapRenderer) {
+    if (fxCtx && this._player) {
       this.clearLayer(3);
-      // 小地图已改为全屏 M 键面板，不再常驻渲染
-      // 渲染 HUD 文本（当前楼层/坐标）
       const floor = StateManager.get('gameState.currentFloor') || 1;
       fxCtx.fillStyle = 'rgba(255,255,255,0.6)';
       fxCtx.font = '11px sans-serif';
