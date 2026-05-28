@@ -22,7 +22,7 @@ import MobileControls, { TouchEvents } from '../ui/MobileControls.js';
 import FullMapRenderer from '../renderers/FullMapRenderer.js';
 import FloorMapPanel from '../ui/FloorMapPanel.js';
 import InventorySystem from '../systems/InventorySystem.js';
-import BaseSystem, { BuildingType, BUILDING_DEFS, SURVIVOR_JOB_LABELS } from '../systems/BaseSystem.js';
+import BaseSystem, { BuildingType, BUILDING_DEFS, SURVIVOR_JOB_LABELS, BASE_LEVEL_CONFIG, JOB_EFFECTS } from '../systems/BaseSystem.js';
 import { ITEM_DEFS, ItemCategory } from '../systems/InventorySystem.js';
 
 export const GameMode = Object.freeze({
@@ -659,7 +659,16 @@ export default class GameScene extends BaseScene {
 
   _renderCombat() { if (this._combatUI) this._combatUI.render(1 / 60); }
   _renderBase() { this._drawBaseBackground(); }
-  _updateBase(dt) {}
+  _updateBase(dt) {
+    // 基地模式下的交互逻辑
+    if (this._isMobile) {
+      const input = this._mobileControls?.getInput();
+      if (input?.interact) {
+        // 处理基地内的点击交互
+        this._handleBaseInteraction();
+      }
+    }
+  }
 
   _drawBaseBackground() {
     const ctx = this.game?.getMapCtx(); if (!ctx) return;
@@ -939,6 +948,9 @@ export default class GameScene extends BaseScene {
     this._setHudText('base-res-food', r.food); this._setHudText('base-res-water', r.water); this._setHudText('base-res-wood', r.materials.wood); this._setHudText('base-res-stone', r.materials.stone); this._setHudText('base-res-metal', r.materials.metal); this._setHudText('base-res-parts', r.parts);
     this._setHudText('base-build-slots', `建筑槽位: ${bs.usedBuildSlots} / ${bs.buildSlots}`); this._setHudText('base-survivor-slots', `人口: ${bs.survivors.length} / ${bs.maxSurvivors}`);
     this._renderBuildingList(); this._renderSurvivorList();
+    this._renderUpgradeInfo();
+    this._renderDailyReport();
+    this._updateBuildButton();
   }
 
   _renderBuildingList() {
@@ -990,6 +1002,143 @@ export default class GameScene extends BaseScene {
     EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'info', message: `${this._baseSystem.survivors[i].name} 已分配为 ${SURVIVOR_JOB_LABELS[job]}` });
   }
 
+  _renderUpgradeInfo() {
+    const el = document.getElementById('base-upgrade-info');
+    if (!el || !this._baseSystem) return;
+    
+    const nextLevel = this._baseSystem.level + 1;
+    const config = BASE_LEVEL_CONFIG[nextLevel];
+    if (!config) {
+      el.innerHTML = '<div class="base-upgrade-level">基地已达最高等级</div>';
+      return;
+    }
+    
+    const cost = { wood: 20 * nextLevel, stone: 15 * nextLevel, metal: 10 * nextLevel };
+    el.innerHTML = `
+      <div class="base-upgrade-level">升级到等级 ${nextLevel}</div>
+      <div class="base-upgrade-benefits">最大 HP: ${config.maxHp} | 人口上限: ${config.maxSurvivors} | 建筑槽位: ${config.buildSlots}</div>
+      <div class="base-upgrade-cost">消耗: 木材 ${cost.wood} 石材 ${cost.stone} 金属 ${cost.metal}</div>
+    `;
+  }
+
+  _renderDailyReport() {
+    const el = document.getElementById('base-daily-report');
+    if (!el || !this._baseSystem) return;
+    
+    const cfg = this._baseSystem.levelConfig;
+    const survivors = this._baseSystem.survivors.length;
+    
+    const dailyFood = cfg.dailyFoodCost + survivors * 1;
+    const dailyWater = cfg.dailyWaterCost + survivors * 1;
+    
+    let html = '';
+    html += `<div class="base-daily-item"><span class="base-daily-label">每日食物消耗</span><span class="base-daily-value negative">-${dailyFood}</span></div>`;
+    html += `<div class="base-daily-item"><span class="base-daily-label">每日水消耗</span><span class="base-daily-value negative">-${dailyWater}</span></div>`;
+    
+    // 计算岗位产出
+    const production = { food: 0, water: 0, parts: 0, defense: 0 };
+    for (const s of this._baseSystem.survivors) {
+      const effects = JOB_EFFECTS[s.job] || {};
+      for (const [k, v] of Object.entries(effects)) {
+        if (production[k] !== undefined) production[k] += v * s.efficiency;
+      }
+    }
+    
+    if (production.food > 0) html += `<div class="base-daily-item"><span class="base-daily-label">采集食物</span><span class="base-daily-value positive">+${production.food}</span></div>`;
+    if (production.water > 0) html += `<div class="base-daily-item"><span class="base-daily-label">采集水</span><span class="base-daily-value positive">+${production.water}</span></div>`;
+    if (production.parts > 0) html += `<div class="base-daily-item"><span class="base-daily-label">采集零件</span><span class="base-daily-value positive">+${production.parts}</span></div>`;
+    if (production.defense > 0) html += `<div class="base-daily-item"><span class="base-daily-label">守卫防御</span><span class="base-daily-value positive">+${production.defense}</span></div>`;
+    
+    // 医疗站治疗
+    const medLevel = this._baseSystem.getBuildingLevel(BuildingType.MEDICAL_STATION);
+    if (medLevel > 0) {
+      html += `<div class="base-daily-item"><span class="base-daily-label">医疗站治疗</span><span class="base-daily-value positive">+${medLevel * 5} HP</span></div>`;
+    }
+    
+    el.innerHTML = html;
+  }
+
+  _updateBuildButton() {
+    const btn = document.getElementById('base-build-btn');
+    if (!btn || !this._baseSystem) return;
+    
+    btn.disabled = !this._baseSystem.canBuild;
+    btn.title = this._baseSystem.canBuild ? '点击开始新建设施' : '建筑槽位已满';
+  }
+
+  _handleBaseInteraction() {
+    // 处理基地模式下的点击交互
+    // TODO: 实现基地内的点击交互逻辑
+  }
+
+  _showBuildMenu() {
+    if (!this._baseSystem) return;
+    
+    const menuEl = document.getElementById('base-build-menu');
+    if (!menuEl) return;
+    
+    const optionsEl = document.getElementById('base-build-options');
+    if (!optionsEl) return;
+    
+    // 生成可选建筑列表
+    let optionsHTML = '';
+    for (const [id, def] of Object.entries(BUILDING_DEFS)) {
+      const currentLevel = this._baseSystem.getBuildingLevel(id);
+      const nextLevel = currentLevel + 1;
+      
+      if (currentLevel >= def.maxLevel) continue;
+      
+      const cost = def.buildCost(nextLevel);
+      optionsHTML += `<div class="base-build-option" data-building="${id}">
+        <div class="building-icon">${def.icon}</div>
+        <div class="base-build-option-info">
+          <div class="base-build-option-name">${def.name} (${currentLevel > 0 ? `升级到 Lv.${nextLevel}` : '新建'})</div>
+          <div class="base-build-option-cost">木材 ${cost.wood} | 石材 ${cost.stone} | 金属 ${cost.metal}</div>
+          <div class="base-build-option-desc">${def.desc}</div>
+        </div>
+      </div>`;
+    }
+    
+    if (!optionsHTML) {
+      optionsHTML = '<div style="color:var(--color-text-dim);padding:8px;">所有设施已达最高等级</div>';
+    }
+    
+    optionsEl.innerHTML = optionsHTML;
+    menuEl.classList.remove('hidden');
+    
+    // 绑定建设选项点击
+    optionsEl.querySelectorAll('.base-build-option').forEach(opt => {
+      opt.addEventListener('click', () => {
+        const buildingId = opt.dataset.building;
+        this._onUpgradeBuilding(buildingId);
+        this._hideBuildMenu();
+      });
+    });
+  }
+
+  _hideBuildMenu() {
+    const menuEl = document.getElementById('base-build-menu');
+    if (menuEl) menuEl.classList.add('hidden');
+  }
+
+  _onUpgradeBase() {
+    if (!this._baseSystem) return;
+    
+    const r = StateManager.getState().globalResources;
+    const resources = { wood: r.materials.wood, stone: r.materials.stone, metal: r.materials.metal };
+    const result = this._baseSystem.upgradeBase(resources);
+    
+    if (result.success) {
+      StateManager.set('globalResources.materials.wood', resources.wood - result.cost.wood);
+      StateManager.set('globalResources.materials.stone', resources.stone - result.cost.stone);
+      StateManager.set('globalResources.materials.metal', resources.metal - result.cost.metal);
+      EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'success', message: `基地升级到等级 ${this._baseSystem.level}！` });
+      this._refreshHUD();
+    } else {
+      EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'warning', message: result.reason });
+    }
+  }
+
   // ---- 面板绑定 ----
 
   _bindPanelEvents() {
@@ -1000,13 +1149,27 @@ export default class GameScene extends BaseScene {
     const bind = (id, handler) => { const el = document.getElementById(id); if (el) { el.addEventListener('click', handler); this._panelHandlers.set(id, handler); } };
     bind('inv-close', () => this._closeInventoryPanel());
     bind('base-close', () => this._closeBasePanel());
+    bind('base-build-btn', () => this._showBuildMenu());
+    bind('base-upgrade-btn', () => this._onUpgradeBase());
+    
+    // 建设菜单取消按钮
+    const cancelBtn = document.querySelector('.base-build-cancel-btn');
+    if (cancelBtn) {
+      const h = () => this._hideBuildMenu();
+      cancelBtn.addEventListener('click', h);
+      this._panelHandlers.set('base-build-cancel', h);
+    }
+    
     const invTabs = document.getElementById('inv-tabs');
     if (invTabs) { const h = (e) => { const cat = e.target.dataset.cat; if (cat) this._renderInventoryPanel(cat); }; invTabs.addEventListener('click', h); this._panelHandlers.set('inv-tabs', h); }
   }
 
   _unbindPanelEvents() {
     for (const [id, h] of this._panelHandlers.entries()) {
-      if (id === 'inv-close' || id === 'base-close' || id === 'inv-tabs' || id === 'inventory-panel' || id === 'base-panel') document.getElementById(id)?.removeEventListener('click', h);
+      if (id === 'inv-close' || id === 'base-close' || id === 'inv-tabs' || id === 'inventory-panel' || id === 'base-panel' || id === 'base-build-btn' || id === 'base-upgrade-btn' || id === 'base-build-cancel') {
+        const el = id === 'base-build-cancel' ? document.querySelector('.base-build-cancel-btn') : document.getElementById(id);
+        el?.removeEventListener('click', h);
+      }
     }
     this._panelHandlers.clear();
   }

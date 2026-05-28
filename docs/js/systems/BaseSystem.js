@@ -100,6 +100,23 @@ export const SURVIVOR_JOB_LABELS = {
   [SurvivorJob.IDLE]: '待命',
 };
 
+/** 基地等级配置 */
+export const BASE_LEVEL_CONFIG = {
+  1: { maxHp: 100,  maxSurvivors: 3,  buildSlots: 2, dailyFoodCost: 2, dailyWaterCost: 2 },
+  2: { maxHp: 150,  maxSurvivors: 5,  buildSlots: 3, dailyFoodCost: 4, dailyWaterCost: 3 },
+  3: { maxHp: 200,  maxSurvivors: 8,  buildSlots: 4, dailyFoodCost: 6, dailyWaterCost: 5 },
+  4: { maxHp: 300,  maxSurvivors: 12, buildSlots: 5, dailyFoodCost: 9, dailyWaterCost: 7 },
+  5: { maxHp: 500,  maxSurvivors: 20, buildSlots: 6, dailyFoodCost: 14, dailyWaterCost: 10 },
+};
+
+/** 幸存者岗位产出/消耗 */
+export const JOB_EFFECTS = {
+  [SurvivorJob.GUARD]:    { dailyDefense: 5 },
+  [SurvivorJob.SCAVENGE]: { dailyFood: 2, dailyWater: 1, dailyParts: 1 },
+  [SurvivorJob.BUILD]:    { buildSpeed: 1 },
+  [SurvivorJob.IDLE]:     {},
+};
+
 /** 默认基地 */
 const DEFAULT_BASE = {
   level: 1,
