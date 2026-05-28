@@ -107,6 +107,7 @@ html, body {
 }
 
 #hud-map-name {
+  display: none;
   position: absolute;
   top: 8px;
   left: 50%;

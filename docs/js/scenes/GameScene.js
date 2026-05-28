@@ -691,7 +691,7 @@ export default class GameScene extends BaseScene {
   }
 
   _setHudText(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }
-  _setHudVisible(id, v) { const el = document.getElementById(id); if (el) el.style.display = v ? '' : 'none'; }
+  _setHudVisible(id, v) { const el = document.getElementById(id); if (el) el.style.display = v ? 'block' : 'none'; }
 
   // ---- 事件订阅 ----
 

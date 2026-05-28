@@ -20,6 +20,8 @@ export default class BootScene extends BaseScene {
     this._loadComplete = false;
     /** @type {number} 启动时间 */
     this._startTime = 0;
+    /** @type {boolean} 是否已触发场景切换 */
+    this._transitioned = false;
   }
 
   async load() {
@@ -55,8 +57,9 @@ export default class BootScene extends BaseScene {
   }
 
   update(dt) {
-    if (this._loadComplete) {
-      // 启动完成后切换到菜单场景
+    if (this._loadComplete && !this._transitioned) {
+      // 启动完成后切换到菜单场景（仅一次）
+      this._transitioned = true;
       this.game.switchScene('menu');
     }
   }
