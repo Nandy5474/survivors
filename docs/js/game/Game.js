@@ -117,7 +117,7 @@ export default class Game {
 
     // 退出当前场景
     if (this._currentScene) {
-      this._currentScene.onExit();
+      try { this._currentScene.onExit(); } catch (e) { console.error('[Game] Error exiting scene:', e); }
       EventBus.emit(GameEvents.SCENE_EXIT, { scene: this._currentScene.name });
     }
 
@@ -125,7 +125,20 @@ export default class Game {
     this._currentScene = newScene;
     EventBus.emit(GameEvents.SCENE_CHANGE, { scene: sceneName, data });
 
-    await newScene.onEnter(data);
+    try {
+      await newScene.onEnter(data);
+    } catch (e) {
+      console.error(`[Game] Error entering scene "${sceneName}":`, e);
+      // 显示错误在加载画面
+      const errEl = document.getElementById('loading-error');
+      if (errEl) {
+        errEl.textContent = '场景加载失败: ' + (e.message || String(e));
+        errEl.style.display = 'block';
+      }
+      const loadingScreen = document.getElementById('loading-screen');
+      if (loadingScreen) loadingScreen.classList.remove('hidden');
+      return;
+    }
     EventBus.emit(GameEvents.SCENE_READY, { scene: sceneName });
 
     StateManager.set('meta.currentScene', sceneName);

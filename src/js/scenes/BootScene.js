@@ -58,9 +58,17 @@ export default class BootScene extends BaseScene {
 
   update(dt) {
     if (this._loadComplete && !this._transitioned) {
-      // 启动完成后切换到菜单场景（仅一次）
       this._transitioned = true;
-      this.game.switchScene('menu');
+      try {
+        this.game.switchScene('menu');
+      } catch (e) {
+        console.error('[BootScene] Failed to switch to menu:', e);
+        const errEl = document.getElementById('loading-error');
+        if (errEl) {
+          errEl.textContent = '菜单场景加载失败: ' + (e.message || String(e));
+          errEl.style.display = 'block';
+        }
+      }
     }
   }
 
