@@ -233,76 +233,95 @@ export default class MapGenerator {
 
     const [home, house1, elevator, stairwell, house2, house3, house4, house5, house6, house7] = rooms;
 
-    // U形走廊系统
-    // 上层走廊（y=8）：连接上层6个房间
+    // U形走廊系统 - 修复连通性bug
+    // 上层走廊（y=6）：紧贴上层房间南墙，连接所有上层房间
     for (let x = home.gridX; x <= house3.gridX + house3.gridW; x++) {
+      if (x >= 0 && x < GW) map.tiles[6][x] = TileType.CORRIDOR;
+    }
+    
+    // 下层走廊（y=8）：紧贴下层房间北墙，连接所有下层房间
+    for (let x = house4.gridX; x <= house7.gridX + house7.gridW; x++) {
       if (x >= 0 && x < GW) map.tiles[8][x] = TileType.CORRIDOR;
     }
     
-    // 下层走廊（y=11）：连接下层4个房间
-    for (let x = house4.gridX; x <= house7.gridX + house7.gridW; x++) {
-      if (x >= 0 && x < GW) map.tiles[11][x] = TileType.CORRIDOR;
-    }
-    
     // 垂直连接走廊（x=15）：连接上下层走廊
-    for (let y = 8; y <= 11; y++) {
+    for (let y = 6; y <= 8; y++) {
       if (y >= 0 && y < GH) map.tiles[y][15] = TileType.CORRIDOR;
     }
     
-    // 房间门朝向：上层房间朝南（y=6），下层房间朝北（y=9），电梯/楼梯朝西（x=12）
-    // 主角家门（朝南）
-    map.tiles[6][home.gridX + Math.floor(home.gridW/2)] = TileType.DOOR;
-    // 民居1门（朝南）
-    map.tiles[6][house1.gridX + Math.floor(house1.gridW/2)] = TileType.DOOR;
-    // 电梯门（朝西）
-    map.tiles[elevator.gridY + Math.floor(elevator.gridH/2)][elevator.gridX] = TileType.DOOR;
-    // 楼梯门（朝西）
-    map.tiles[stairwell.gridY + Math.floor(stairwell.gridH/2)][stairwell.gridX] = TileType.DOOR;
-    // 民居2门（朝南）
-    map.tiles[6][house2.gridX + Math.floor(house2.gridW/2)] = TileType.DOOR;
-    // 民居3门（朝南）
-    map.tiles[6][house3.gridX + Math.floor(house3.gridW/2)] = TileType.DOOR;
-    // 民居4门（朝北）
-    map.tiles[9][house4.gridX + Math.floor(house4.gridW/2)] = TileType.DOOR;
-    // 民居5门（朝北）
-    map.tiles[9][house5.gridX + Math.floor(house5.gridW/2)] = TileType.DOOR;
-    // 民居6门（朝北）
-    map.tiles[9][house6.gridX + Math.floor(house6.gridW/2)] = TileType.DOOR;
-    // 民居7门（朝北）
-    map.tiles[9][house7.gridX + Math.floor(house7.gridW/2)] = TileType.DOOR;
-
-    // 玩家起始位置：主角家中心
-    map.playerStart = { x: home.centerX, y: home.centerY };
-    
-    // 楼梯功能：按E切换楼层（3楼↔1楼）
-    // 楼梯间位置：x=17-19, y=2-5（上层），x=17-20, y=9-12（下层）
-    // 楼梯连接：垂直通道（x=18, y=6-8）
+    // 楼梯垂直通道（x=18）：连接上下层楼梯间
     for (let y = 6; y <= 8; y++) {
       if (y >= 0 && y < GH) map.tiles[y][18] = TileType.CORRIDOR;
     }
     
-    // 楼梯门（上下层）
-    map.tiles[5][18] = TileType.DOOR; // 上层楼梯门
-    map.tiles[9][18] = TileType.DOOR; // 下层楼梯门
+    // 房间门朝向：修复门位置bug
+    // 上层房间门（朝南，在走廊y=6上）
+    const homeDoorX = home.gridX + Math.floor(home.gridW/2);
+    map.tiles[6][homeDoorX] = TileType.DOOR;
+    home.doors.push({ gx: homeDoorX, gy: 6, side: DoorSide.BOTTOM });
     
-    // 电梯井：包含两个电梯轿厢（x=12-15, y=2-5）
-    // 电梯门（x=12, y=3-4）
-    map.tiles[3][12] = TileType.DOOR;
-    map.tiles[4][12] = TileType.DOOR;
+    const house1DoorX = house1.gridX + Math.floor(house1.gridW/2);
+    map.tiles[6][house1DoorX] = TileType.DOOR;
+    house1.doors.push({ gx: house1DoorX, gy: 6, side: DoorSide.BOTTOM });
+    
+    const house2DoorX = house2.gridX + Math.floor(house2.gridW/2);
+    map.tiles[6][house2DoorX] = TileType.DOOR;
+    house2.doors.push({ gx: house2DoorX, gy: 6, side: DoorSide.BOTTOM });
+    
+    const house3DoorX = house3.gridX + Math.floor(house3.gridW/2);
+    map.tiles[6][house3DoorX] = TileType.DOOR;
+    house3.doors.push({ gx: house3DoorX, gy: 6, side: DoorSide.BOTTOM });
+    
+    // 电梯门（朝西，在墙外x=11）
+    const elevatorDoorY = elevator.gridY + Math.floor(elevator.gridH/2);
+    map.tiles[elevatorDoorY][elevator.gridX - 1] = TileType.DOOR;
+    elevator.doors.push({ gx: elevator.gridX - 1, gy: elevatorDoorY, side: DoorSide.LEFT });
+    
+    // 楼梯门（朝西，在墙外x=16）
+    const stairDoorY = stairwell.gridY + Math.floor(stairwell.gridH/2);
+    map.tiles[stairDoorY][stairwell.gridX - 1] = TileType.DOOR;
+    stairwell.doors.push({ gx: stairwell.gridX - 1, gy: stairDoorY, side: DoorSide.LEFT });
+    
+    // 下层房间门（朝北，在走廊y=8上）
+    const house4DoorX = house4.gridX + Math.floor(house4.gridW/2);
+    map.tiles[8][house4DoorX] = TileType.DOOR;
+    house4.doors.push({ gx: house4DoorX, gy: 8, side: DoorSide.TOP });
+    
+    const house5DoorX = house5.gridX + Math.floor(house5.gridW/2);
+    map.tiles[8][house5DoorX] = TileType.DOOR;
+    house5.doors.push({ gx: house5DoorX, gy: 8, side: DoorSide.TOP });
+    
+    const house6DoorX = house6.gridX + Math.floor(house6.gridW/2);
+    map.tiles[8][house6DoorX] = TileType.DOOR;
+    house6.doors.push({ gx: house6DoorX, gy: 8, side: DoorSide.TOP });
+    
+    const house7DoorX = house7.gridX + Math.floor(house7.gridW/2);
+    map.tiles[8][house7DoorX] = TileType.DOOR;
+    house7.doors.push({ gx: house7DoorX, gy: 8, side: DoorSide.TOP });
+    
+    // 楼梯上下层门（在垂直通道x=18上）
+    map.tiles[6][18] = TileType.DOOR; // 上层楼梯门
+    stairwell.doors.push({ gx: 18, gy: 6, side: DoorSide.BOTTOM });
+    
+    map.tiles[8][18] = TileType.DOOR; // 下层楼梯门
+    stairwell.doors.push({ gx: 18, gy: 8, side: DoorSide.TOP });
+    
+    // 玩家起始位置：主角家中心
+    map.playerStart = { x: home.centerX, y: home.centerY };
     
     // 物资分布：在走廊和部分房间放置物资
     const lootPositions = [
-      // 上层走廊物资
-      { x: 5, y: 8, type: 'food', amount: 1 },
-      { x: 10, y: 8, type: 'parts', amount: 2 },
-      { x: 20, y: 8, type: 'water', amount: 1 },
+      // 上层走廊物资（y=6）
+      { x: 5, y: 6, type: 'food', amount: 1 },
+      { x: 10, y: 6, type: 'parts', amount: 2 },
+      { x: 20, y: 6, type: 'water', amount: 1 },
       
-      // 下层走廊物资
-      { x: 5, y: 11, type: 'food', amount: 1 },
-      { x: 10, y: 11, type: 'parts', amount: 1 },
+      // 下层走廊物资（y=8）
+      { x: 5, y: 8, type: 'food', amount: 1 },
+      { x: 10, y: 8, type: 'parts', amount: 1 },
       
       // 垂直连接走廊物资
-      { x: 15, y: 9, type: 'medkit', amount: 1 },
+      { x: 15, y: 7, type: 'medkit', amount: 1 },
     ];
     
     for (const loot of lootPositions) {
@@ -321,18 +340,18 @@ export default class MapGenerator {
     map.floors = {
       3: { 
         rooms: [home, house1, elevator, stairwell, house2, house3], 
-        yRange: [0, 8] 
+        yRange: [0, 7] 
       },
       1: { 
         rooms: [house4, house5, house6, house7], 
-        yRange: [9, 15] 
+        yRange: [8, 15] 
       }
     };
     
-    // 出口点：楼梯间（玩家需要到达一楼大厅才能完成序章）
+    // 出口点：下层楼梯间（玩家需要到达一楼才能完成序章）
     map.exitPoint = { 
       x: stairwell.centerX, 
-      y: stairwell.centerY + TILE_SIZE * 2 
+      y: stairwell.centerY
     };
     
     return map;
