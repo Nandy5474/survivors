@@ -189,7 +189,7 @@ export default class GameScene extends BaseScene {
     if (chapter === 0 && !prologueComplete) {
       const currentFloor = StateManager.get('gameState.currentFloor') || 3;
       const hasWeapon = StateManager.get('player.hasWeapon') === true;
-      const policeRoom = this._mapData ? this._mapData.rooms.find(r => r.type === RoomType.EMPTY && r.y > 15 * TILE_SIZE) : null;
+      const policeRoom = this._mapData ? this._mapData.rooms.find(r => r.type === RoomType.EMPTY && r.worldY > 15 * TILE_SIZE) : null;
       
       if (currentFloor === 1 && hasWeapon && policeRoom && policeRoom.explored) {
         StateManager.set('story.flags.prologueComplete', true);
@@ -466,10 +466,6 @@ export default class GameScene extends BaseScene {
     // 标记房间已探索（解除迷雾）
     if (!room.explored) {
       room.explored = true;
-      // 如果是楼梯间，检查是否可以切换到另一层
-      if (room.type === RoomType.STAIRWELL) {
-        this._handleStairwellTransition(room);
-      }
     }
     
     let msg = `进入 ${label}`;
@@ -494,7 +490,7 @@ export default class GameScene extends BaseScene {
     if (room.type === RoomType.EMPTY) {
       if (isPrologue) {
         // 检查是否在一楼大厅（警察 NPC 位置）
-        const isLobby = room.y > 15 * TILE_SIZE; // 1楼区域
+        const isLobby = room.worldY > 15 * TILE_SIZE; // 1楼区域
         if (isLobby) {
           msg = '一楼大厅里，一名受伤的警察靠在墙上...';
           // 生成警察 NPC
@@ -510,26 +506,6 @@ export default class GameScene extends BaseScene {
 
     if (this._mobileControls) this._mobileControls.setInteractButtonVisible(showInteract);
     EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'info', message: msg });
-  }
-  
-  /** 处理楼梯间切换楼层 */
-  _handleStairwellTransition(room) {
-    const currentFloor = StateManager.get('gameState.currentFloor') || 3;
-    const isPrologue = StateManager.get('story.chapter') === 0 && StateManager.get('story.flags.prologueComplete') !== true;
-    
-    if (!isPrologue) return;
-    
-    // 检查是否在序章的楼梯间
-    if (currentFloor === 3) {
-      // 从3楼到1楼
-      StateManager.set('gameState.currentFloor', 1);
-      EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'info', message: '通过消防楼梯下到一楼大厅...' });
-      // 这里可以添加传送逻辑
-    } else if (currentFloor === 1) {
-      // 从1楼到3楼
-      StateManager.set('gameState.currentFloor', 3);
-      EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'info', message: '通过消防楼梯上到三楼...' });
-    }
   }
   
   /** 生成警察 NPC */
@@ -552,11 +528,6 @@ export default class GameScene extends BaseScene {
       role: SurvivorRole.SOLDIER,
     });
     this._survivors.push(police);
-    
-    // 警察死亡后掉落武器
-    setTimeout(() => {
-      this._lootItems.push(new LootItem(room.centerX, room.centerY, 'ammo', 12));
-    }, 5000);
   }
 
   _findNearestZombie(room, maxDist) {
@@ -681,10 +652,11 @@ export default class GameScene extends BaseScene {
         EventBus.emit(GameEvents.DIALOGUE_START, { speaker: nearest.name, text: dialogue.text });
         EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'info', message: `${nearest.name}: "${dialogue.text}"` });
         
-        // 警察对话结束后掉落武器
+        // 警察对话结束后获得武器和弹药
         if (nearest.name === '受伤的警察' && dialogue.isLast) {
+          StateManager.set('player.hasWeapon', true);
           setTimeout(() => {
-            EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'success', message: '警察倒下了...他留下了警用手枪和12发子弹。' });
+            EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'success', message: '获得了警用手枪和12发子弹！' });
             this._lootItems.push(new LootItem(nearest.x, nearest.y, 'ammo', 12));
           }, 2000);
         }
