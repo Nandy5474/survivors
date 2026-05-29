@@ -229,6 +229,22 @@ export default class Game {
     return this._canvasLayers[0]?.ctx || null;
   }
 
+  /**
+   * 获取实体层的 2D 上下文
+   * @returns {CanvasRenderingContext2D|null}
+   */
+  getEntityCtx() {
+    return this._canvasLayers[2]?.ctx || null;
+  }
+
+  /**
+   * 获取特效层的 2D 上下文
+   * @returns {CanvasRenderingContext2D|null}
+   */
+  getFxCtx() {
+    return this._canvasLayers[3]?.ctx || null;
+  }
+
   // ---- 私有 ----
 
   /**
