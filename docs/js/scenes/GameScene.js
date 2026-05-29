@@ -730,7 +730,7 @@ export default class GameScene extends BaseScene {
     if (fogCtx && this._mapRenderer) {
       this.clearLayer(0);
       fogCtx.save(); fogCtx.translate(-this._camera.x, -this._camera.y);
-      this._mapRenderer.renderFog(fogCtx, vp);
+      this._mapRenderer.renderFog(fogCtx, vp, this._player.x, this._player.y);
       fogCtx.restore();
     }
     // 第四遍：HUD 文字叠在最上层

@@ -145,9 +145,12 @@ export default class MapRenderer {
 
   /**
    * 渲染迷雾（公开方法 — GameScene 在独立 fog canvas 上调用）
-   * 修复：未探索房间完全涂黑，防止瓦片间漏光；覆盖走廊段通往未探索房间
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {{x:number,y:number,w:number,h:number}} viewport
+   * @param {number} [playerX] - 玩家世界坐标 X（可选，用于清除走廊迷雾）
+   * @param {number} [playerY] - 玩家世界坐标 Y（可选）
    */
-  renderFog(ctx, viewport) {
+  renderFog(ctx, viewport, playerX, playerY) {
     const { mapData } = this;
     const tw = TILE_SIZE;
     const th = TILE_SIZE;
@@ -180,6 +183,20 @@ export default class MapRenderer {
           }
         }
       }
+    }
+
+    // (3) 以玩家为中心清除迷雾圆形区域（揭示走廊/过道）
+    if (playerX != null && playerY != null) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-out';
+      const fogR = this.fogRadius;
+      const gradient = ctx.createRadialGradient(playerX, playerY, fogR * 0.3, playerX, playerY, fogR);
+      gradient.addColorStop(0, 'rgba(0,0,0,1)');
+      gradient.addColorStop(0.5, 'rgba(0,0,0,0.9)');
+      gradient.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(playerX - fogR, playerY - fogR, fogR * 2, fogR * 2);
+      ctx.restore();
     }
   }
 
