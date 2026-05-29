@@ -637,14 +637,26 @@ export default class GameScene extends BaseScene {
     if (!this._player || !this._mapData || this._isPaused) return;
     if (this.mode === GameMode.COMBAT && this._combatManager.inCombat) { this._combatManager.playerAction('attack'); return; }
     
-    // 楼梯间切换楼层
+    // 楼梯间切换楼层 + 传送
     if (this._player.currentRoom && this._player.currentRoom.type === RoomType.STAIRWELL) {
       const currentFloor = StateManager.get('gameState.currentFloor') || 3;
       const newFloor = currentFloor === 3 ? 1 : 3;
       StateManager.set('gameState.currentFloor', newFloor);
+      
+      // 传送到另一楼层的楼梯间
+      const allStairs = this._mapData.rooms.filter(r => r.type === RoomType.STAIRWELL);
+      const currentStair = this._player.currentRoom;
+      const targetStair = allStairs.find(r => r !== currentStair);
+      if (targetStair) {
+        this._player.x = targetStair.centerX;
+        this._player.y = targetStair.centerY;
+        targetStair.explored = true;
+        this._player.currentRoom = targetStair;
+      }
+      
       EventBus.emit(GameEvents.UI_NOTIFICATION, { 
         type: 'info', 
-        message: `通过消防楼梯${newFloor === 3 ? '上到三楼' : '下到一楼'}...` 
+        message: `通过消防楼梯${newFloor === 3 ? '上到三楼' : '下到一楼大厅'}...` 
       });
       return;
     }
