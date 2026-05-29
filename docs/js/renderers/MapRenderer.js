@@ -15,6 +15,8 @@ const ROOM_COLORS = {
   [RoomType.SUPPLY]:     { fill: '#1a2e1a', border: '#2a4a2a', label: '物资房' },
   [RoomType.ZOMBIE]:     { fill: '#2e1a1a', border: '#4a2a2a', label: '危险区域' },
   [RoomType.SURVIVOR]:   { fill: '#1a1a2e', border: '#2a2a4a', label: '幸存者' },
+  [RoomType.ELEVATOR_HALL]: { fill: '#1e1a2a', border: '#3a2a4a', label: '电梯厅' },
+  [RoomType.STAIRWELL]:  { fill: '#1a2a2a', border: '#2a4a3a', label: '楼梯间' },
 };
 
 /** 地砖颜色 */

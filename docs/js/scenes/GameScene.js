@@ -128,6 +128,7 @@ export default class GameScene extends BaseScene {
     StateManager.set('story.flags', {});
     StateManager.set('story.flags.prologueComplete', false);
     StateManager.set('player.hasWeapon', false);
+    StateManager.set('gameState.currentFloor', 3);
   }
 
   update(dt) {
@@ -179,21 +180,34 @@ export default class GameScene extends BaseScene {
     EventBus.emit(GameEvents.SCENE_CHANGE, { scene: `game:${mode}`, data: { prevMode: prev } });
   }
 
-  /** Task 4: 序章完成条件 — 探索了便利店（SUPPLY）即完成 */
+  /** Task 6: 序章完成条件 — 在一楼大厅遇到警察并拿到武器后完成 */
   _cleanupExploration() {
     const chapter = StateManager.get('story.chapter') || 0;
     const prologueComplete = StateManager.get('story.flags.prologueComplete') === true;
+    
+    // 序章完成条件：到达一楼大厅并拿到警察的武器
     if (chapter === 0 && !prologueComplete) {
-      const supplyRoom = this._mapData ? this._mapData.rooms.find(r => r.type === RoomType.SUPPLY) : null;
-      if (supplyRoom && supplyRoom.explored) {
+      const currentFloor = StateManager.get('gameState.currentFloor') || 3;
+      const hasWeapon = StateManager.get('player.hasWeapon') === true;
+      const policeRoom = this._mapData ? this._mapData.rooms.find(r => r.type === RoomType.EMPTY && r.y > 15 * TILE_SIZE) : null;
+      
+      if (currentFloor === 1 && hasWeapon && policeRoom && policeRoom.explored) {
         StateManager.set('story.flags.prologueComplete', true);
         StateManager.set('story.chapter', 1);
-        EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'success', message: '序章完成！前路还很漫长，但至少今晚的晚餐有了着落。先回家整理一下物资，明天再深入探索...' });
+        EventBus.emit(GameEvents.UI_NOTIFICATION, { 
+          type: 'success', 
+          message: '序章完成！你拿到了警察的手枪，知道了警察局的位置...现在必须离开这栋楼，前往警察局寻找其他幸存者。' 
+        });
         this._updateBaseButtonState();
-        setTimeout(() => { this.setMode(GameMode.BASE); this._drawBaseBackground(); this._openBasePanel(); }, 3000);
+        setTimeout(() => { 
+          this.setMode(GameMode.BASE); 
+          this._drawBaseBackground(); 
+          this._openBasePanel(); 
+        }, 4000);
         return;
       }
     }
+    
     this._unbindKeyEvents();
     this._mapData = null; this._player = null;
     this._zombies = []; this._survivors = []; this._lootItems = [];
@@ -216,9 +230,10 @@ export default class GameScene extends BaseScene {
     let useStoryMap = false;
 
     if (chapter === 0 && !prologueComplete) {
-      mapName = '序章 · 家门外';
+      mapName = '序章 · 居民楼';
       useStoryMap = true;
       this._mapData = MapGenerator.generatePrologue();
+      StateManager.set('gameState.currentFloor', 3);
     } else if (chapter === 1 && !chapter1Started) {
       mapName = '第一章 · 废土初探';
       useStoryMap = true;
@@ -260,10 +275,10 @@ export default class GameScene extends BaseScene {
     this.clearLayer(1); this.clearLayer(2);
     this._explorationReady = true;
 
-    // Task 5: 序章开场剧情
+    // Task 6: 序章开场剧情 — 居民楼
     if (chapter === 0 && !prologueComplete) {
       setTimeout(() => {
-        EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'info', message: '末日爆发后的第三天，家里的食物快吃完了...必须出门寻找补给。' });
+        EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'info', message: '末日爆发后的第三天...你在家里醒来，食物快吃完了，必须出去探索。' });
       }, 800);
     }
 
@@ -275,22 +290,8 @@ export default class GameScene extends BaseScene {
     this._zombies = []; this._survivors = [];
     this._prologueDefeatedZombie = false; this._prologueLootedStore = false;
     if (chapter === 0 && !prologueComplete) {
-      // Task 5: 邻居家 — 1 只弱化丧尸
-      const zombieRoom = this._mapData.rooms.find(r => r.type === RoomType.ZOMBIE);
-      if (zombieRoom) {
-        this._zombies.push(new Zombie(zombieRoom.centerX, zombieRoom.centerY, {
-          hp: 30, speed: 40, attack: 5, isElite: false, type: 'walker',
-          patrolPath: this._generatePatrolPath(zombieRoom, zombieRoom.centerX, zombieRoom.centerY),
-        }));
-      }
-      // Task 5: 小巷尽头 — 受伤的狗（情感元素）
-      const emptyRoom = this._mapData.rooms.find(r => r.type === RoomType.EMPTY);
-      if (emptyRoom) {
-        this._survivors.push(new Survivor(emptyRoom.centerX, emptyRoom.centerY, {
-          name: '受伤的狗', dialogue: [['汪…（它受伤了，但尾巴还在轻轻摇晃）']],
-          canRecruit: false, role: SurvivorRole.CIVILIAN,
-        }));
-      }
+      // Task 6: 序章居民楼 — 3楼房间探索，1楼有警察 NPC
+      // 不预生成丧尸，警察 NPC 在进入大厅时才生成
       return;
     }
     // 第一章
@@ -452,17 +453,31 @@ export default class GameScene extends BaseScene {
     return val;
   }
 
-  /** Task 5: 房间进入剧情 */
+  /** Task 6: 房间进入剧情 — 支持多楼层、房间迷雾、警察 NPC */
   _onRoomEntered(room) {
-    const roomLabels = { home: '家', small_box: '小型储物间', large_box: '大型储物间', empty: '空房间', supply: '物资房', zombie: '丧尸房', survivor: '幸存者房' };
+    const roomLabels = { 
+      home: '家', small_box: '小型储物间', large_box: '大型储物间', empty: '空房间', 
+      supply: '物资房', zombie: '丧尸房', survivor: '幸存者房',
+      elevator_hall: '电梯厅', stairwell: '消防楼梯'
+    };
     const label = roomLabels[room.type] || room.type;
     EventBus.emit(GameEvents.ROOM_ENTERED, { room });
+    
+    // 标记房间已探索（解除迷雾）
+    if (!room.explored) {
+      room.explored = true;
+      // 如果是楼梯间，检查是否可以切换到另一层
+      if (room.type === RoomType.STAIRWELL) {
+        this._handleStairwellTransition(room);
+      }
+    }
+    
     let msg = `进入 ${label}`;
     let showInteract = false;
     const isPrologue = StateManager.get('story.chapter') === 0 && StateManager.get('story.flags.prologueComplete') !== true;
 
     if (room.type === RoomType.HOME) {
-      if (isPrologue) msg = '家里的食物快吃完了，必须出门寻找补给。';
+      if (isPrologue) msg = '你在自家床上醒来，窗外一片死寂...家里的食物快吃完了，必须出门寻找补给。';
       else msg += ' · 这是你的安全屋…准备出发吧';
     }
     if (room.hasSupplies) { msg += ' · 按 E 收集物资'; showInteract = true; }
@@ -477,12 +492,71 @@ export default class GameScene extends BaseScene {
       showInteract = true;
     }
     if (room.type === RoomType.EMPTY) {
-      if (isPrologue) msg = '前路还很漫长，但至少今晚的晚餐有了着落。先回家整理一下物资，明天再深入探索...';
+      if (isPrologue) {
+        // 检查是否在一楼大厅（警察 NPC 位置）
+        const isLobby = room.y > 15 * TILE_SIZE; // 1楼区域
+        if (isLobby) {
+          msg = '一楼大厅里，一名受伤的警察靠在墙上...';
+          // 生成警察 NPC
+          this._spawnPoliceNPC(room);
+        } else {
+          msg = '空房间...';
+        }
+      }
     }
     if (room.type === RoomType.SURVIVOR) { msg += ' · 发现幸存者！按 E 对话'; showInteract = true; }
+    if (room.type === RoomType.ELEVATOR_HALL) { msg += ' · 电梯已停运，无法使用'; }
+    if (room.type === RoomType.STAIRWELL) { msg += ' · 按 E 上下楼梯'; showInteract = true; }
 
     if (this._mobileControls) this._mobileControls.setInteractButtonVisible(showInteract);
     EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'info', message: msg });
+  }
+  
+  /** 处理楼梯间切换楼层 */
+  _handleStairwellTransition(room) {
+    const currentFloor = StateManager.get('gameState.currentFloor') || 3;
+    const isPrologue = StateManager.get('story.chapter') === 0 && StateManager.get('story.flags.prologueComplete') !== true;
+    
+    if (!isPrologue) return;
+    
+    // 检查是否在序章的楼梯间
+    if (currentFloor === 3) {
+      // 从3楼到1楼
+      StateManager.set('gameState.currentFloor', 1);
+      EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'info', message: '通过消防楼梯下到一楼大厅...' });
+      // 这里可以添加传送逻辑
+    } else if (currentFloor === 1) {
+      // 从1楼到3楼
+      StateManager.set('gameState.currentFloor', 3);
+      EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'info', message: '通过消防楼梯上到三楼...' });
+    }
+  }
+  
+  /** 生成警察 NPC */
+  _spawnPoliceNPC(room) {
+    // 检查是否已生成过警察
+    const existingPolice = this._survivors.find(s => s.name === '受伤的警察');
+    if (existingPolice) return;
+    
+    const police = new Survivor(room.centerX, room.centerY, {
+      name: '受伤的警察',
+      dialogue: [
+        '咳...你...你是幸存者？',
+        '我是李警官，在疏散市民时被丧尸咬伤了...时间不多了。',
+        '这把警用手枪给你...子弹不多，省着用。',
+        '听着...警察局还有紧急通讯设备...如果你能到达那里...',
+        '告诉其他幸存者...往北走...安全区...',
+        '（警察闭上了眼睛）'
+      ],
+      canRecruit: false,
+      role: SurvivorRole.SOLDIER,
+    });
+    this._survivors.push(police);
+    
+    // 警察死亡后掉落武器
+    setTimeout(() => {
+      this._lootItems.push(new LootItem(room.centerX, room.centerY, 'ammo', 12));
+    }, 5000);
   }
 
   _findNearestZombie(room, maxDist) {
@@ -558,10 +632,24 @@ export default class GameScene extends BaseScene {
     if (this._onKeyUp) window.removeEventListener('keyup', this._onKeyUp);
   }
 
-  /** 供 MobileControls 调用的交互方法 */
+  /** 供 MobileControls 调用的交互方法 — Task 6: 支持楼梯切换和警察对话 */
   onInteract() {
     if (!this._player || !this._mapData || this._isPaused) return;
     if (this.mode === GameMode.COMBAT && this._combatManager.inCombat) { this._combatManager.playerAction('attack'); return; }
+    
+    // 楼梯间切换楼层
+    if (this._player.currentRoom && this._player.currentRoom.type === RoomType.STAIRWELL) {
+      const currentFloor = StateManager.get('gameState.currentFloor') || 3;
+      const newFloor = currentFloor === 3 ? 1 : 3;
+      StateManager.set('gameState.currentFloor', newFloor);
+      EventBus.emit(GameEvents.UI_NOTIFICATION, { 
+        type: 'info', 
+        message: `通过消防楼梯${newFloor === 3 ? '上到三楼' : '下到一楼'}...` 
+      });
+      return;
+    }
+    
+    // 收集物资
     if (this._player.currentRoom && this._player.currentRoom.hasSupplies) {
       const result = this._player.collectSupply();
       if (result) {
@@ -572,12 +660,22 @@ export default class GameScene extends BaseScene {
         return;
       }
     }
+    
+    // 与幸存者/警察对话
     const nearest = this._findNearestSurvivor(60);
     if (nearest && !nearest.interacted) {
       const dialogue = nearest.getNextDialogue();
       if (dialogue) {
         EventBus.emit(GameEvents.DIALOGUE_START, { speaker: nearest.name, text: dialogue.text });
         EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'info', message: `${nearest.name}: "${dialogue.text}"` });
+        
+        // 警察对话结束后掉落武器
+        if (nearest.name === '受伤的警察' && dialogue.isLast) {
+          setTimeout(() => {
+            EventBus.emit(GameEvents.UI_NOTIFICATION, { type: 'success', message: '警察倒下了...他留下了警用手枪和12发子弹。' });
+            this._lootItems.push(new LootItem(nearest.x, nearest.y, 'ammo', 12));
+          }, 2000);
+        }
       }
     }
   }
@@ -649,11 +747,21 @@ export default class GameScene extends BaseScene {
     const fxCtx = this.game.getLayer(3)?.ctx;
     if (fxCtx && this._player) {
       this.clearLayer(3);
-      const floor = StateManager.get('gameState.currentFloor') || 1;
+      const floor = StateManager.get('gameState.currentFloor') || 3;
+      const isPrologue = StateManager.get('story.chapter') === 0 && StateManager.get('story.flags.prologueComplete') !== true;
+      
       fxCtx.fillStyle = 'rgba(255,255,255,0.6)';
       fxCtx.font = '11px sans-serif';
       fxCtx.textAlign = 'right';
-      fxCtx.fillText(`${Math.floor(this._player.x)}, ${Math.floor(this._player.y)}  F${floor}`, canvas.width - 16, 20);
+      fxCtx.fillText(`${Math.floor(this._player.x)}, ${Math.floor(this._player.y)}`, canvas.width - 16, 20);
+      
+      // 楼层指示器
+      if (isPrologue) {
+        fxCtx.fillStyle = 'rgba(255,200,50,0.8)';
+        fxCtx.font = 'bold 14px sans-serif';
+        fxCtx.textAlign = 'left';
+        fxCtx.fillText(`${floor}F`, 16, 20);
+      }
     }
   }
 

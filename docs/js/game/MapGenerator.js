@@ -16,6 +16,8 @@ export const RoomType = Object.freeze({
   SUPPLY: 'supply',
   ZOMBIE: 'zombie',
   SURVIVOR: 'survivor',
+  ELEVATOR_HALL: 'elevator_hall',
+  STAIRWELL: 'stairwell',
 });
 
 export const TileType = Object.freeze({ WALL: 0, FLOOR: 1, CORRIDOR: 2, DOOR: 3 });
@@ -184,53 +186,101 @@ export default class MapGenerator {
 
   // ============ 剧本地图 ============
 
-  /** Task 5: 序章「家门外」— 25x22 */
+  /** Task 6: 序章「居民楼」— 30x30 双楼层 */
   static generatePrologue() {
-    const T = TILE_SIZE, GW = 25, GH = 22, map = new MapData(GW, GH);
+    const T = TILE_SIZE, GW = 30, GH = 30, map = new MapData(GW, GH);
     for (let y = 0; y < GH; y++) map.tiles[y] = new Array(GW).fill(TileType.WALL);
 
-    // 房间定义：[gridX, gridY, gridW, gridH, RoomType]
-    const defs = [
-      [2, 2, 5, 5, RoomType.HOME],      // 家 5x5
-      [10, 2, 4, 5, RoomType.ZOMBIE],   // 邻居家 4x5
-      [17, 3, 4, 4, RoomType.SUPPLY],   // 便利店 4x4
-      [21, 3, 3, 4, RoomType.EMPTY],    // 小巷尽头 3x4
+    // 楼层 3（玩家起始楼层）：8 间房 + 电梯厅 + 楼梯间
+    const floor3Defs = [
+      // 东翼房间
+      [2, 2, 3, 4, RoomType.HOME],      // 301 玩家家
+      [6, 2, 3, 4, RoomType.EMPTY],    // 302 空房
+      [10, 2, 3, 4, RoomType.EMPTY],   // 303 空房
+      [14, 2, 3, 4, RoomType.EMPTY],   // 304 空房
+      // 西翼房间
+      [2, 8, 3, 4, RoomType.EMPTY],    // 305 空房
+      [6, 8, 3, 4, RoomType.EMPTY],    // 306 空房
+      [10, 8, 3, 4, RoomType.EMPTY],   // 307 空房
+      [14, 8, 3, 4, RoomType.EMPTY],   // 308 空房
+      // 公共区域
+      [18, 2, 4, 4, RoomType.ELEVATOR_HALL],  // 电梯厅（无法运行）
+      [23, 2, 3, 4, RoomType.STAIRWELL],      // 消防楼梯
     ];
+
+    // 楼层 1（一楼大厅）：大厅 + 出口
+    const floor1Defs = [
+      [2, 18, 8, 6, RoomType.EMPTY],   // 一楼大厅
+      [11, 18, 4, 4, RoomType.SUPPLY], // 一楼便利店
+      [16, 18, 3, 4, RoomType.STAIRWELL], // 楼梯间（1楼）
+      [20, 18, 4, 4, RoomType.ELEVATOR_HALL], // 电梯厅（1楼）
+    ];
+
     const rooms = [];
-    for (const [rx, ry, rw, rh, type] of defs) {
+    for (const [rx, ry, rw, rh, type] of [...floor3Defs, ...floor1Defs]) {
       const room = new Room(rx, ry, rw, rh, type);
       for (let y = ry; y < ry + rh; y++) for (let x = rx; x < rx + rw; x++) { if (y >= 0 && y < GH && x >= 0 && x < GW) map.tiles[y][x] = TileType.FLOOR; }
       if (type === RoomType.HOME) { room.hasSupplies = true; room.supplyType = 'food'; }
-      if (type === RoomType.SUPPLY) { room.hasSupplies = true; room.supplyType = 'ammo'; }  // 序章便利店提供武器
+      if (type === RoomType.SUPPLY) { room.hasSupplies = true; room.supplyType = 'ammo'; }
       map.rooms.push(room); rooms.push(room);
     }
-    const [home, neighbor, store, alley] = rooms;
 
-    // 走廊1：家 → 邻居家（y=4，宽度 7→10）
-    for (let x = home.gridX + home.gridW; x < neighbor.gridX; x++) { if (x >= 0 && x < GW) map.tiles[4][x] = TileType.CORRIDOR; }
+    const [home, f3r2, f3r3, f3r4, f3r5, f3r6, f3r7, f3r8, elevator3, stair3, lobby, store1f, stair1f, elevator1f] = rooms;
 
-    // 走廊2：邻居家 → 便利店（y=5~6，宽度 14→17，2格宽）
-    for (let x = neighbor.gridX + neighbor.gridW; x < store.gridX; x++) { for (let dy = 0; dy <= 1; dy++) { const y = 5 + dy; if (x >= 0 && x < GW && y >= 0 && y < GH) map.tiles[y][x] = TileType.CORRIDOR; } }
+    // 3楼走廊：连接所有房间到电梯厅
+    for (let x = home.gridX + home.gridW; x < elevator3.gridX; x++) { if (x >= 0 && x < GW) map.tiles[4][x] = TileType.CORRIDOR; }
+    for (let x = f3r2.gridX + f3r2.gridW; x < elevator3.gridX; x++) { if (x >= 0 && x < GW) map.tiles[4][x] = TileType.CORRIDOR; }
+    for (let x = f3r3.gridX + f3r3.gridW; x < elevator3.gridX; x++) { if (x >= 0 && x < GW) map.tiles[4][x] = TileType.CORRIDOR; }
+    for (let x = f3r4.gridX + f3r4.gridW; x < elevator3.gridX; x++) { if (x >= 0 && x < GW) map.tiles[4][x] = TileType.CORRIDOR; }
+    for (let x = f3r5.gridX + f3r5.gridW; x < elevator3.gridX; x++) { if (x >= 0 && x < GW) map.tiles[10][x] = TileType.CORRIDOR; }
+    for (let x = f3r6.gridX + f3r6.gridW; x < elevator3.gridX; x++) { if (x >= 0 && x < GW) map.tiles[10][x] = TileType.CORRIDOR; }
+    for (let x = f3r7.gridX + f3r7.gridW; x < elevator3.gridX; x++) { if (x >= 0 && x < GW) map.tiles[10][x] = TileType.CORRIDOR; }
+    for (let x = f3r8.gridX + f3r8.gridW; x < elevator3.gridX; x++) { if (x >= 0 && x < GW) map.tiles[10][x] = TileType.CORRIDOR; }
 
-    // 走廊3：便利店 → 小巷尽头（y=4，宽度 21→21，即直接相邻，加1格走廊）
-    if (store.gridX + store.gridW < alley.gridX) {
-      for (let x = store.gridX + store.gridW; x < alley.gridX; x++) { if (x >= 0 && x < GW) map.tiles[4][x] = TileType.CORRIDOR; }
-    }
+    // 3楼电梯厅到楼梯间走廊
+    for (let x = elevator3.gridX + elevator3.gridW; x < stair3.gridX; x++) { if (x >= 0 && x < GW) map.tiles[4][x] = TileType.CORRIDOR; }
 
-    // 门：支持 WALL 或 CORRIDOR 位置
+    // 1楼走廊：连接楼梯间到大厅
+    for (let x = stair1f.gridX + stair1f.gridW; x < lobby.gridX; x++) { if (x >= 0 && x < GW) map.tiles[20][x] = TileType.CORRIDOR; }
+    for (let x = lobby.gridX + lobby.gridW; x < store1f.gridX; x++) { if (x >= 0 && x < GW) map.tiles[20][x] = TileType.CORRIDOR; }
+    for (let x = store1f.gridX + store1f.gridW; x < elevator1f.gridX; x++) { if (x >= 0 && x < GW) map.tiles[20][x] = TileType.CORRIDOR; }
+
+    // 门：所有房间到走廊
     this._pDoor(map, home, home.gridX + home.gridW, 4, DoorSide.RIGHT);
-    this._pDoor(map, neighbor, neighbor.gridX - 1, 4, DoorSide.LEFT);
-    this._pDoor(map, neighbor, neighbor.gridX + neighbor.gridW, 5, DoorSide.RIGHT);
-    this._pDoor(map, store, store.gridX - 1, 5, DoorSide.LEFT);
-    this._pDoor(map, store, store.gridX + store.gridW, 4, DoorSide.RIGHT);
-    this._pDoor(map, alley, alley.gridX - 1, 4, DoorSide.LEFT);
+    this._pDoor(map, f3r2, f3r2.gridX + f3r2.gridW, 4, DoorSide.RIGHT);
+    this._pDoor(map, f3r3, f3r3.gridX + f3r3.gridW, 4, DoorSide.RIGHT);
+    this._pDoor(map, f3r4, f3r4.gridX + f3r4.gridW, 4, DoorSide.RIGHT);
+    this._pDoor(map, f3r5, f3r5.gridX + f3r5.gridW, 10, DoorSide.RIGHT);
+    this._pDoor(map, f3r6, f3r6.gridX + f3r6.gridW, 10, DoorSide.RIGHT);
+    this._pDoor(map, f3r7, f3r7.gridX + f3r7.gridW, 10, DoorSide.RIGHT);
+    this._pDoor(map, f3r8, f3r8.gridX + f3r8.gridW, 10, DoorSide.RIGHT);
+    this._pDoor(map, elevator3, elevator3.gridX - 1, 4, DoorSide.LEFT);
+    this._pDoor(map, elevator3, elevator3.gridX + elevator3.gridW, 4, DoorSide.RIGHT);
+    this._pDoor(map, stair3, stair3.gridX - 1, 4, DoorSide.LEFT);
+    this._pDoor(map, lobby, lobby.gridX - 1, 20, DoorSide.LEFT);
+    this._pDoor(map, store1f, store1f.gridX - 1, 20, DoorSide.LEFT);
+    this._pDoor(map, elevator1f, elevator1f.gridX - 1, 20, DoorSide.LEFT);
 
-    // 拾取物
-    map.lootItems.push({ x: 8 * T + T / 2, y: 4 * T + T / 2, type: 'food', amount: 1, collected: false, gridX: 8, gridY: 4 });
-    map.lootItems.push({ x: store.centerX, y: store.centerY, type: 'food', amount: 2, collected: false, gridX: store.gridX + Math.floor(store.gridW / 2), gridY: store.gridY + Math.floor(store.gridH / 2) });
+    // 楼梯连接：3楼楼梯到1楼楼梯（垂直通道）
+    for (let y = stair3.gridY + stair3.gridH; y < stair1f.gridY; y++) { if (y >= 0 && y < GH) map.tiles[y][stair3.gridX + 1] = TileType.CORRIDOR; }
+
+    // 拾取物：3楼房间内
+    map.lootItems.push({ x: f3r2.centerX, y: f3r2.centerY, type: 'food', amount: 1, collected: false, gridX: f3r2.gridX + Math.floor(f3r2.gridW / 2), gridY: f3r2.gridY + Math.floor(f3r2.gridH / 2) });
+    map.lootItems.push({ x: f3r3.centerX, y: f3r3.centerY, type: 'parts', amount: 2, collected: false, gridX: f3r3.gridX + Math.floor(f3r3.gridW / 2), gridY: f3r3.gridY + Math.floor(f3r3.gridH / 2) });
+    map.lootItems.push({ x: f3r5.centerX, y: f3r5.centerY, type: 'medkit', amount: 1, collected: false, gridX: f3r5.gridX + Math.floor(f3r5.gridW / 2), gridY: f3r5.gridY + Math.floor(f3r5.gridH / 2) });
+
+    // 1楼便利店武器
+    map.lootItems.push({ x: store1f.centerX, y: store1f.centerY, type: 'ammo', amount: 5, collected: false, gridX: store1f.gridX + Math.floor(store1f.gridW / 2), gridY: store1f.gridY + Math.floor(store1f.gridH / 2) });
 
     map.playerStart = { x: home.centerX, y: home.centerY };
-    map.exitPoint = { x: alley.worldX + alley.worldW + T, y: alley.centerY };
+    map.exitPoint = { x: lobby.worldX + lobby.worldW + T, y: lobby.centerY };
+    
+    // 标记楼层
+    map.floors = {
+      3: { rooms: [home, f3r2, f3r3, f3r4, f3r5, f3r6, f3r7, f3r8, elevator3, stair3], yRange: [0, 15] },
+      1: { rooms: [lobby, store1f, stair1f, elevator1f], yRange: [16, 30] }
+    };
+    
     return map;
   }
 
