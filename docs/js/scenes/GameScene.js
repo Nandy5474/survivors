@@ -623,6 +623,12 @@ export default class GameScene extends BaseScene {
         this._player.y = targetStair.centerY;
         targetStair.explored = true;
         this._player.currentRoom = targetStair;
+        // 立即重置摄像机到新位置
+        const canvas = this.game?.getLayer(1)?.canvas;
+        if (canvas) {
+          this._camera.x = this._player.x - canvas.width / 2;
+          this._camera.y = this._player.y - canvas.height / 2;
+        }
       }
       
       EventBus.emit(GameEvents.UI_NOTIFICATION, { 
